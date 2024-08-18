@@ -26,10 +26,14 @@ local function binarySearch(bucket, score)
 end
 
 function leaderboardHelper.GetRank(leaderboard: leaderboard, id: string, score: number): number
+    if not leaderboard or #leaderboard == 0 then
+        return nil
+    end
+
     local pos = binarySearch(leaderboard, score)
-    
+
     local upper = pos
-    while upper >= 1 and leaderboard[upper].score == score do
+    while upper >= 1 and leaderboard[upper] and leaderboard[upper].score == score do
         if leaderboard[upper].id == id then
             return upper
         end
@@ -37,7 +41,7 @@ function leaderboardHelper.GetRank(leaderboard: leaderboard, id: string, score: 
     end
     
     local lower = pos + 1
-    while lower <= #leaderboard and leaderboard[lower].score == score do
+    while lower <= #leaderboard and leaderboard[lower] and leaderboard[lower].score == score do
         if leaderboard[lower].id == id then
             return lower
         end

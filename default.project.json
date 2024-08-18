@@ -9,6 +9,9 @@
       },
       "RankStore": {
         "$path": "src/RankStore"
+      },
+      "Benchmark": {
+        "$path": "benchmark"
       }
     },
 
