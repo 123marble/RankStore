@@ -52,7 +52,6 @@ function RankStore.GetRankStore(name : string, numBuckets : number)
         BUCKET_METADATA_TTL_SECS
     ) :: TimedCache.TimedCache<metadata>  -- New buckets will not be picked up until the metadata cache expires.
 
-    self._bucketKeyPrefix = name .. "_Bucket_"
     self._numBuckets = numBuckets
     return self
 end
@@ -104,8 +103,14 @@ function RankStore:_GetBucketStoreMetadataAsync() : metadata
     end
 end
 
+
+function RankStore:_GetIdentityStoreKey(id : number)
+    return "identity_" .. tostring(id)
+end
+
+
 function RankStore:_getBucketKeyAsync(index)
-    local bucketKey = self._bucketKeyPrefix .. "_line_" .. self.metadataCache:Get().line .. "_index_" .. index
+    local bucketKey = "line_" .. self.metadataCache:Get().line .. "_index_" .. index
     
     return bucketKey
 end
@@ -149,6 +154,19 @@ function RankStore:SetScoreAsync(uniqueId, score)
         error("Failed to set score:", result)
     end
 
+    local identityKey = self:_GetIdentityStoreKey(uniqueId)
+    local success, result = pcall(function()
+        return self._bucketStore:UpdateAsync(identityKey, function(identity)
+            identity = identity or {}
+            identity.score = score
+        end)
+    end)
+
+    if not success then
+        error("Failed to set score:", result)
+    end
+
+    -- TODO: Need to return prevScore, prevRank, newScore, newRank
     return result
 end
 
