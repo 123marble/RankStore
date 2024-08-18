@@ -1,3 +1,6 @@
+-- Helper module for managing a leaderboard.
+-- Assumes that you always know the score of the user you are updating because
+-- binarySearch can be used to make table updates, which are O(log n).
 local leaderboardHelper = {}
 
 export type entry = {
@@ -8,33 +11,23 @@ export type entry = {
 export type leaderboard = {entry}
 
 local function binarySearch(bucket, score)
-    local left, right = 1, #bucket / 6  -- Each entry is 6 bytes
-    while left <= right do
-        local mid = math.floor((left + right) / 2)
-        local _, midScore = string.unpack(">I3I3", bucket, (mid - 1) * 6 + 1)
-        if midScore < score then
-            right = mid - 1
-        else
-            left = mid + 1
-        end
-    end
-    return left
-end
-
-function leaderboardHelper.GetRank(leaderboard, id, score)
 
 end
 
-function leaderboardHelper.GetInsertPos(leaderboard, score)
+function leaderboardHelper.GetRank(leaderboard : leaderboard, id : number, score : number) : number
 
 end
 
-function leaderboardHelper.Remove(leaderboard, id, score)
+function leaderboardHelper.GetInsertPos(leaderboard : leaderboard, score : number) : number
+
+end
+
+function leaderboardHelper.Remove(leaderboard : leaderboard, id : number, score : number) : number
 
 end
 -- 1. Find and remove prevScore and id from the leaderboard
 -- 2. Insert newScore and id into the leaderboard
-function leaderboardHelper.Update(leaderboard, id : string, prevScore : number?, newScore : number)
+function leaderboardHelper.Update(leaderboard : leaderboard, id : string, prevScore : number?, newScore : number) : (number, number)
     local prevRank = leaderboardHelper.Remove(leaderboard, id, prevScore)
     local newRank = leaderboardHelper.GetInsertPos(leaderboard, newScore)
     table.insert(leaderboard, newRank, {id = id, score = newScore})
