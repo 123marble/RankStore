@@ -3,27 +3,12 @@
   "tree": {
     "$className": "DataModel",
 
-    "ReplicatedStorage": {
-      "Shared": {
-        "$path": "src/shared"
-      }
-    },
-
     "ServerScriptService": {
       "Server": {
         "$path": "src/server"
       },
       "RankStore": {
         "$path": "src/RankStore"
-      }
-    },
-
-
-    "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "Client": {
-          "$path": "src/client"
-        }
       }
     },
 
