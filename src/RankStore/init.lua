@@ -1,6 +1,7 @@
 local DataStoreService = game:GetService("DataStoreService")
 
 local TimedCache = require(script.Parent.RankStore.timedCache)
+local LeaderboardHelper = require(script.Parent.RankStore.leaderboardHelper)
 
 local RankStore = {}
 RankStore.__index = RankStore
@@ -13,6 +14,10 @@ math.randomseed()
 type metadata = {
     numBuckets : number,
     line : number
+}
+
+type identityEntry = {
+    score : number
 }
 
 -- Compression functions
@@ -54,6 +59,136 @@ function RankStore.GetRankStore(name : string, numBuckets : number)
 
     self._numBuckets = numBuckets
     return self
+end
+
+-- 2 GetAsync requests
+function RankStore:SetScoreAsync(uniqueId, score)
+    local identityKey = self:_GetIdentityStoreKey(uniqueId)
+    local success, result = pcall(function()
+        return self._bucketStore:UpdateAsync(identityKey, function(identity : identityEntry)
+            identity = identity or {}
+            local prevScore = identity.score
+            identity.score = score
+            return prevScore
+        end)
+    end)
+
+    if not success then
+        error("Failed to set score:", result)
+    end
+
+    local prevScore = result
+    local bucketKey = self:_GetBucketKeyForId(uniqueId)
+
+    local success, result, newRank = pcall(function()
+        return self._bucketStore:UpdateAsync(bucketKey, function(leaderboard)
+            leaderboard = leaderboard or {}
+
+            local prevRank, newRank = LeaderboardHelper.Update(leaderboard, uniqueId, prevScore, score)
+            return prevRank, newRank
+        end)
+    end)
+
+    if not success then
+        error("Failed to set score:", result)
+    end
+    local prevRank = result
+
+    -- TODO: Need to return prevScore, prevRank, newScore, newRank
+    return prevScore, prevRank, score, newRank
+end
+
+function RankStore:GetAllBucketsIteratorAsync(ignoreBucketKeys : {string?})
+    local bucketKeys = self:_getAllBucketKeys()
+    for _, bucketKey in ipairs(ignoreBucketKeys) do
+        table.remove(bucketKeys, table.find(bucketKeys, bucketKey))
+    end
+    local index = 0
+    local count = #bucketKeys
+
+    return function()
+        index = index + 1
+        if index <= count then
+            local bucketKey = bucketKeys[index]
+            return bucketKey, self:_GetBucketAsync(bucketKey)
+        end
+    end
+end
+
+-- 1. Get the score from the identity store
+-- 2. Get the rank from the relevant bucket store using leaderboardHelper. If the identity is not found then this is a sign that there was a write failure
+--      during the second datastore update in SetScoreAsync. This should be corrected by intserting the score into the leaderboard in the bucket.
+-- 3. Get the rank placement in the other buckets
+-- 4. Sum the ranks to get the final rank.
+-- numBuckets + 1 GetAsync requests
+function RankStore:GetEntryAsync(uniqueId : number)
+    local identityKey = self:_GetIdentityStoreKey(uniqueId)
+    local success, result = pcall(function()
+        return self._bucketStore:GetAsync(identityKey) :: identityEntry
+    end)
+
+    if not success then
+        error("Failed to get identity entry:", result)
+    end
+
+    local identityEntry = result
+    local score = identityEntry.score
+
+    local bucketKey = self:_GetBucketKeyForId(uniqueId)
+    local leaderboard = self:_GetBucketAsync(bucketKey)
+    local rank = LeaderboardHelper.GetRank(leaderboard, uniqueId, score)
+
+    if not rank then
+        -- TODO: This indicates a consistency violation between the identity store and the leaderboard store
+        -- This should be corrected by inserting the score into the leaderboard in the bucket.
+    end
+
+    local rank = 0
+    local score = 0
+    for _, leaderboard in self:GetAllBucketsIteratorAsync(bucketKey) do
+        local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score)
+        rank += bucketRank
+    end
+    return rank, score
+end
+
+function RankStore:GetTopScoresAsync(limit)
+    local leaderboards = {}
+    local indices = {}
+    local topScores = {}
+
+    -- Collect all leaderboards and initialize indices
+    for _, leaderboard in self:GetAllBucketsIteratorAsync({}) do
+        if #leaderboard > 0 then
+            table.insert(leaderboards, leaderboard)
+            table.insert(indices, 1)
+        end
+    end
+
+    -- Merge top scores
+    while #topScores < limit do
+        local maxScore = -math.huge
+        local maxIndex = nil
+
+        -- Find the highest score among the current indices
+        for i, leaderboard in ipairs(leaderboards) do
+            if indices[i] <= #leaderboard and leaderboard[indices[i]].score > maxScore then
+                maxScore = leaderboard[indices[i]].score
+                maxIndex = i
+            end
+        end
+
+        -- If we've exhausted all leaderboards, break
+        if maxIndex == nil then
+            break
+        end
+
+        -- Add the highest score to topScores and move to the next score in that leaderboard
+        table.insert(topScores, leaderboards[maxIndex][indices[maxIndex]])
+        indices[maxIndex] = indices[maxIndex] + 1
+    end
+
+    return topScores
 end
 
 function RankStore:_InitBucketStoreMetadataAsync()
@@ -136,214 +271,16 @@ function RankStore:_getAllBucketKeys()
     return bucketKeys
 end
 
-function RankStore:SetScoreAsync(uniqueId, score)
-    local bucketKey = self:_GetBucketKeyForId(uniqueId)
-
-    local success, result = pcall(function()
-        return self._bucketStore:UpdateAsync(bucketKey, function(leaderboard)
-            leaderboard = leaderboard or {}
-
-            -- TODO: Need to find existing entry and remove if it exists.
-            local insertIndex = binarySearch(leaderboard, score)
-
-            table.insert(leaderboard, insertIndex, encodeEntry(uniqueId, score))
-        end)
-    end)
-
-    if not success then
-        error("Failed to set score:", result)
-    end
-
-    local identityKey = self:_GetIdentityStoreKey(uniqueId)
-    local success, result = pcall(function()
-        return self._bucketStore:UpdateAsync(identityKey, function(identity)
-            identity = identity or {}
-            identity.score = score
-        end)
-    end)
-
-    if not success then
-        error("Failed to set score:", result)
-    end
-
-    -- TODO: Need to return prevScore, prevRank, newScore, newRank
-    return result
-end
-
-function RankStore:_GetEntryInBucketAsync(scoreId : number, score : number, bucketKey : number)
-
+function RankStore:_GetBucketAsync(bucketKey : number) : LeaderboardHelper.leaderboard
     local success, result = pcall(function()
         return self._bucketStore:GetAsync(bucketKey)
     end)
 
     if not success then
-        error("Failed to get rank in bucket:", result)
+        error("Failed to get bucket:", tostring(result))
     end
 
-    -- TODO: If the the score is found in the bucket then we need to check if the scoreId
-    -- matches so that the rank is not offset.
-    local rank = binarySearch(result, score)
-
-    return rank
-end
-
-function RankStore:GetEntry(uniqueId : number)
-    local bucketKey = self:_GetBucketKeyForId(uniqueId)
-
-    local bucketKeys = self:_getAllBucketKeys()
-    table.remove(bucketKeys, table.find(bucketKeys, bucketKey))
-
-    local rank = 0
-    local score = 0
-    for i, bucketKey in ipairs(bucketKeys) do
-        local success, result, bucketScore = pcall(function()
-            return self:_GetEntryInBucketAsync(uniqueId, bucketKey)
-        end)
-
-        if not success then
-            error("Failed to get score from bucket " .. tostring(i) .. ": " .. tostring(result))
-        end
-
-        local bucketRank = result
-
-        rank += bucketRank
-        score = bucketScore or score
-    end
-    return rank, score
-end
-
-function RankStore:SetScoreTemp(uniqueId, score)
-    local success, metadata = pcall(function()
-        return self._bucketMetadataStore:GetAsync("metadata") or {firstBucket = 1, currentBucket = 1}
-    end)
-    
-    if not success then
-        warn("Failed to get bucket metadata:", metadata)
-        return
-    end
-    
-    local currentBucketKey = self._bucketKeyPrefix .. metadata.currentBucket
-    local success, currentBucket = pcall(function()
-        return self._leaderboardStore:GetAsync(currentBucketKey) or ""
-    end)
-    
-    if not success then
-        warn("Failed to get current bucket:", currentBucket)
-        return
-    end
-    
-    -- Remove existing entry for this user, if any
-    local newBucket = ""
-    local i = 1
-    while i <= #currentBucket do
-        local entryUserId, entryScore = string.unpack(">I3I3", currentBucket, i)
-        if entryUserId ~= userId then
-            newBucket = newBucket .. string.sub(currentBucket, i, i + 5)
-        end
-        i = i + 6
-    end
-    currentBucket = newBucket
-    
-    -- Insert new score
-    local insertIndex = binarySearch(currentBucket, score)
-    local encodedEntry = encodeEntry(userId, score)
-    currentBucket = currentBucket:sub(1, (insertIndex - 1) * 6) .. 
-                    encodedEntry .. 
-                    currentBucket:sub(insertIndex * 6 + 1)
-    
-    -- Check if bucket is full
-    if #currentBucket > BUCKET_SIZE * 6 then
-        metadata.currentBucket = metadata.currentBucket + 1
-        currentBucketKey = self._bucketKeyPrefix .. metadata.currentBucket
-        local overflowEntry = currentBucket:sub(-6)
-        currentBucket = currentBucket:sub(1, -7)  -- Remove overflow entry
-        
-        -- Save overflow entry to new bucket
-        pcall(function()
-            self._leaderboardStore:SetAsync(currentBucketKey, overflowEntry)
-        end)
-    end
-    
-    -- Save updated bucket and metadata
-    pcall(function()
-        self._leaderboardStore:SetAsync(self._bucketKeyPrefix .. metadata.currentBucket, currentBucket)
-        self._bucketMetadataStore:SetAsync("metadata", metadata)
-    end)
-end
-
-function RankStore:findRank(userId, score)
-    local success, metadata = pcall(function()
-        return self._bucketMetadataStore:GetAsync("metadata")
-    end)
-    
-    if not success or not metadata then
-        warn("Failed to get bucket metadata:", metadata)
-        return nil
-    end
-    
-    local totalRank = 0
-    
-    for bucketIndex = metadata.firstBucket, metadata.currentBucket do
-        local bucketKey = self._bucketKeyPrefix .. bucketIndex
-        local success, bucket = pcall(function()
-            return self._leaderboardStore:GetAsync(bucketKey)
-        end)
-        
-        if not success or not bucket then
-            warn("Failed to get bucket:", bucketKey)
-            return nil
-        end
-        
-        local insertIndex = binarySearch(bucket, score)
-        totalRank = totalRank + insertIndex - 1
-        
-        -- If we find the user in this bucket, we can stop searching
-        for i = insertIndex, #bucket / 6 do
-            local entryUserId, entryScore = string.unpack(">I3I3", bucket, (i - 1) * 6 + 1)
-            if entryUserId == userId then
-                return totalRank + i
-            end
-        end
-    end
-    
-    return nil  -- User not found
-end
-
-function RankStore:getTopScores(limit)
-    local success, metadata = pcall(function()
-        return self._bucketMetadataStore:GetAsync("metadata")
-    end)
-    
-    if not success or not metadata then
-        warn("Failed to get bucket metadata:", metadata)
-        return {}
-    end
-    
-    local topScores = {}
-    local remaining = limit
-    
-    for bucketIndex = metadata.firstBucket, metadata.currentBucket do
-        if remaining <= 0 then break end
-        
-        local bucketKey = self._bucketKeyPrefix .. bucketIndex
-        local success, bucket = pcall(function()
-            return self._leaderboardStore:GetAsync(bucketKey)
-        end)
-        
-        if not success or not bucket then
-            warn("Failed to get bucket:", bucketKey)
-            return topScores
-        end
-        
-        for i = 1, #bucket, 6 do
-            if remaining <= 0 then break end
-            local entry = decodeEntry(bucket:sub(i, i + 5))
-            table.insert(topScores, entry)
-            remaining = remaining - 1
-        end
-    end
-    
-    return topScores
+    return result
 end
 
 return RankStore
