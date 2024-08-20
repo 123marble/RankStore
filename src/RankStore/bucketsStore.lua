@@ -17,7 +17,7 @@ function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataSto
     return self
 end
 
-function BucketsStore:SetScoreAsync(id, prevScore, newScore) : (number, number)
+function BucketsStore:SetScoreAsync(id : number, prevScore : number?, newScore : number) : (number, number)
     local bucketKey = self:_GetBucketKeyForId(id)
     local prevRank, newRank
     local success, result = pcall(function()
@@ -33,20 +33,19 @@ function BucketsStore:SetScoreAsync(id, prevScore, newScore) : (number, number)
         error("Failed to set score: " .. tostring(result))
     end
 
-    -- TODO: This code is shared with GetEntryAsync. Consider refactoring.
     local bucketKeys = self:_GetAllBucketKeys({bucketKey})
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
-        local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, newScore) - 1
-        if prevRank then
-            prevRank += bucketRank
-        end
-        newRank += bucketRank
+    local scores = {newScore}
+    if prevScore then
+        table.insert(scores, prevScore)
+    end
+    local rankSums = self:_GetSummedRanksOverBuckets(bucketKeys, scores)
+    newRank += rankSums[1]
+    if prevScore then
+        prevRank += rankSums[2]
     end
 
     return prevRank, newRank
 end
-
 
 function BucketsStore:FindRank(id : number, score : number) : number
     local bucketKey = self:_GetBucketKeyForId(id)
@@ -54,17 +53,12 @@ function BucketsStore:FindRank(id : number, score : number) : number
     local rank = LeaderboardHelper.GetRank(leaderboard, id, score)
 
     if not rank then
-        -- This is a consistency violation between the identity store and the leaderboard store
-        -- This should be corrected by inserting the score into the leaderboard in the bucket.
         return nil
     end
 
     local bucketKeys = self:_GetAllBucketKeys({bucketKey})
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
-        local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
-        rank += bucketRank
-    end
+    local rankSums = self:_GetSummedRanksOverBuckets(bucketKeys, {score})
+    rank += rankSums[1]
 
     return rank
 end
@@ -85,7 +79,20 @@ function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     return topScores
 end
 
-
+function BucketsStore:_GetSummedRanksOverBuckets(bucketKeys : {string}, scores : {number}) : number
+    local ranks = {}
+    for i = 1, #scores do
+        ranks[i] = 0
+    end
+    for _, bucketKey in ipairs(bucketKeys) do
+        local leaderboard = self:_GetBucketAsync(bucketKey)
+        for i, score in ipairs(scores) do
+            local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
+            ranks[i] += bucketRank
+        end
+    end
+    return ranks
+end
 
 function BucketsStore:_GetBucketKeyAsync(index)
     local bucketKey = "bucket_line_" .. self._metadataStore:GetAsync().line .. "_index_" .. index
@@ -122,14 +129,16 @@ function BucketsStore:_GetBucketKeyForId(uniqueId : number)
     return bucketKey
 end
 
-function BucketsStore:_GetAllBucketKeys(ignoreIndexes : {number}?)
-    local ignoreIndexes = ignoreIndexes or {}
+function BucketsStore:_GetAllBucketKeys(ignoreKeys : {number}?)
+    local ignoreKeys = ignoreKeys or {}
     local bucketKeys = {}
     
     for i = 1, self._metadataStore:GetAsync().numBuckets do
-        if not table.find(ignoreIndexes, i) then
-            table.insert(bucketKeys, self:_GetBucketKeyAsync(i))
+        local key = self:_GetBucketKeyAsync(i)
+        if not table.find(ignoreKeys, key) then
+            table.insert(bucketKeys, key)
         end
+        
     end
     
     return bucketKeys
