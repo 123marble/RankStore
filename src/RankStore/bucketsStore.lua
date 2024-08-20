@@ -33,15 +33,16 @@ function BucketsStore:SetScoreAsync(id : number, prevScore : number?, newScore :
         error("Failed to set score: " .. tostring(result))
     end
 
-    local bucketKeys = self:_GetAllBucketKeys({bucketKey})
     local scores = {newScore}
+    -- TODO: Find a way to make the below code cleaner.
     if prevScore then
         table.insert(scores, prevScore)
-    end
-    local rankSums = self:_GetSummedRanksOverBuckets(bucketKeys, scores)
-    newRank += rankSums[1]
-    if prevScore then
+        local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, scores)
         prevRank += rankSums[2]
+        newRank += rankSums[1]
+    else
+        local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, scores)
+        newRank += rankSums[1]
     end
 
     return prevRank, newRank
@@ -56,8 +57,7 @@ function BucketsStore:FindRank(id : number, score : number) : number
         return nil
     end
 
-    local bucketKeys = self:_GetAllBucketKeys({bucketKey})
-    local rankSums = self:_GetSummedRanksOverBuckets(bucketKeys, {score})
+    local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, {score})
     rank += rankSums[1]
 
     return rank
@@ -66,31 +66,53 @@ end
 function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     local leaderboards = {}
 
-    -- TODO: Fetch buckets in parallel.
-    local bucketKeys = self:_GetAllBucketKeys()
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
+    self:_MapGetBucketsAsync(function(leaderboard)
         if #leaderboard > 0 then
             table.insert(leaderboards, leaderboard)
         end
-    end
- 
+    end, nil, true)
+
     local topScores = Util.Merge(leaderboards, false, function(entry) return entry.score end, limit)
     return topScores
 end
 
-function BucketsStore:_GetSummedRanksOverBuckets(bucketKeys : {string}, scores : {number}) : number
+function BucketsStore:_MapGetBucketsAsync(func : (leaderboard : {entry}) -> any, ignoreKeys : {string}, parallel : boolean?, ...)
+    parallel = parallel or false
+
+    local function runMap(bucketKey, ...)
+        local leaderboard = self:_GetBucketAsync(bucketKey)
+        func(leaderboard, ...)
+    end
+    
+    local bucketKeys = self:_GetAllBucketKeys(ignoreKeys)
+    
+    for _, bucketKey in ipairs(bucketKeys) do
+        if parallel then
+            task.spawn(function(...)
+                runMap(bucketKey, ...)
+            end, ...)
+        else
+            runMap(bucketKey, ...)
+        end
+    end
+end
+
+function BucketsStore:_GetSummedRanksOverBuckets(ignoreKeys : {string}, scores : {number}) : number
     local ranks = {}
     for i = 1, #scores do
         ranks[i] = 0
     end
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
+
+    local function sumBucket(leaderboard, ...)
+        local scores, ranks = table.unpack({...})
         for i, score in ipairs(scores) do
             local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
             ranks[i] += bucketRank
         end
     end
+
+    self:_MapGetBucketsAsync(sumBucket, ignoreKeys, true, scores, ranks)
+
     return ranks
 end
 
@@ -100,7 +122,7 @@ function BucketsStore:_GetBucketKeyAsync(index)
     return bucketKey
 end
 
-function BucketsStore:_getRandomBucketIndexAsync(uniqueId : number)
+function BucketsStore:_GetRandomBucketIndexAsync(uniqueId : number)
     return uniqueId % self._metadataStore:GetAsync().numBuckets + 1
 end
 
@@ -120,16 +142,13 @@ function BucketsStore:_GetBucketAsync(bucketKey : number) : {entry}
     return result
 end
 
-
-
--- If the metadataCache is expired then this function will yield.
 function BucketsStore:_GetBucketKeyForId(uniqueId : number)
-    local bucketIndex = self:_getRandomBucketIndexAsync(uniqueId)
+    local bucketIndex = self:_GetRandomBucketIndexAsync(uniqueId)
     local bucketKey = self:_GetBucketKeyAsync(bucketIndex)
     return bucketKey
 end
 
-function BucketsStore:_GetAllBucketKeys(ignoreKeys : {number}?)
+function BucketsStore:_GetAllBucketKeys(ignoreKeys : {string}?)
     local ignoreKeys = ignoreKeys or {}
     local bucketKeys = {}
     
