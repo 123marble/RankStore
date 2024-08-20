@@ -1,91 +1,48 @@
-local DataStoreService = game:GetService("DataStoreService")
-
-local TimedCache = require(script.Parent.RankStore.timedCache)
-local LeaderboardHelper = require(script.Parent.RankStore.leaderboardHelper)
-local Util = require(script.Parent.RankStore.util)
+local IdentityStore = require(script.Parent.RankStore.identityStore)
+local BucketsStore = require(script.Parent.RankStore.bucketsStore)
+local MetadataStore = require(script.Parent.RankStore.metadataStore)
+local Shared = require(script.Parent.RankStore.shared)
 
 local RankStore = {}
 RankStore.__index = RankStore
-
-local BUCKET_METADATA_TTL_SECS = 60*60
-
-type metadata = {
-    numBuckets : number,
-    maxBucketSize : number,
-    line : number
-}
-
-type identityEntry = {
-    score : number
-}
 
 -- Compression functions
 -- local function encodeEntry(userId, score)
 --     return string.pack(">I3I3", userId, score)
 -- end
 
+export type entry = {
+    id: string,
+    rank : number,
+    score: number
+}
+
+export type setResult = {
+    prevRank : number,
+    prevScore : number,
+    newRank : number,
+    newScore : number
+}
+
 function RankStore.GetRankStore(name : string, numBuckets : number, maxBucketSize : number)
     local self = setmetatable({}, RankStore)
-    self._bucketStore = DataStoreService:GetDataStore(name .. "_BucketStore")
+    self._name = name
+    self._datastore = Shared.GetDataStore(name)
 
-    self._metadataInitialised = false
-    self._bucketStoreMetadataKey = "metadata"
-
-    self:_InitBucketStoreMetadataAsync(numBuckets, maxBucketSize)
-    self._metadataCache = TimedCache.New(
-        function()
-            return self:_GetBucketStoreMetadataAsync() 
-        end, 
-        BUCKET_METADATA_TTL_SECS
-    ) :: TimedCache.TimedCache<metadata>  -- Note that using a timed cache means that changes to the metadata on other servers will not take effect until the cache expires.
+    self._metadataStore = MetadataStore.GetMetadataStore(name, numBuckets, maxBucketSize)
+    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore)
+    self._identityStore = IdentityStore.GetIdentityStore(name, self._metadataStore)
+    
     return self
 end
 
--- 2 GetAsync requests
-function RankStore:SetScoreAsync(uniqueId, score)
-    local identityKey = self:_GetIdentityStoreKey(uniqueId)
-    local prevScore
-    local success, result = pcall(function()
-        return self._bucketStore:UpdateAsync(identityKey, function(identity : identityEntry)
-            identity = identity or {}
-            prevScore = identity.score
-            identity.score = score
-            return identity
-        end)
-    end)
+-- 2 UpdateAsync requests
+function RankStore:SetScoreAsync(id : number, score : number)
+    local identityEntry = self._identityStore:Update(id, score)
 
-    if not success then
-        error("Failed to set score: " .. tostring(result))
-    end
+    local prevRank, newRank = self._bucketsStore:SetScoreAsync(id, identityEntry.prevScore, score)
 
-    local bucketKey = self:_GetBucketKeyForId(uniqueId)
-
-    local prevRank, newRank
-    local success, result = pcall(function()
-        return self._bucketStore:UpdateAsync(bucketKey, function(leaderboard)
-            leaderboard = leaderboard or {}
-
-            prevRank, newRank = LeaderboardHelper.Update(leaderboard, uniqueId, prevScore, score)
-            return leaderboard
-        end)
-    end)
-
-    if not success then
-        error("Failed to set score: " .. tostring(result))
-    end
-
-    -- TODO: This code is shared with GetEntryAsync. Consider refactoring.
-    local bucketKeys = self:_GetAllBucketKeys({bucketKey})
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
-        local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
-        if prevRank then
-            prevRank += bucketRank
-        end
-        newRank += bucketRank
-    end
-
-    return {prevRank = prevRank, prevScore = prevScore, newRank = newRank, newScore = score}
+    return {prevRank = prevRank, prevScore = identityEntry.prevScore, newRank = newRank, newScore = score}
 end
 
 -- 1. Get the score from the identity store
@@ -94,164 +51,43 @@ end
 -- 3. Get the rank placement in the other buckets
 -- 4. Sum the ranks to get the final rank.
 -- numBuckets + 1 GetAsync requests
-function RankStore:GetEntryAsync(uniqueId : number)
-    local identityKey = self:_GetIdentityStoreKey(uniqueId)
-    local success, result = pcall(function()
-        return self._bucketStore:GetAsync(identityKey) :: identityEntry
-    end)
+function RankStore:GetEntryAsync(id : number) : entry
+    local identityEntry = self._identityStore:Get(id)
 
-    if not success then
-        error("Failed to get identity entry: " .. tostring(result))
+    if not identityEntry then
+        warn("Attempted to get entry for non-existent id:", tostring(id))
+        return nil
     end
 
-    local identityEntry = result
-    local score = identityEntry.score
+    local rank = self._bucketsStore:FindRank(id, identityEntry.currentScore)
+    if not rank then  -- This is a consistency violation between the identity store and the leaderboard store
+                        -- This should be corrected by inserting the score into the leaderboard in the bucket.
+        local _, newRank = self._bucketsStore:SetScoreAsync(id, identityEntry.prevScore, identityEntry.currentScore)
 
-    local bucketKey = self:_GetBucketKeyForId(uniqueId)
-    local leaderboard = self:_GetBucketAsync(bucketKey)
-    local rank = LeaderboardHelper.GetRank(leaderboard, uniqueId, score)
-
-    if not rank then
-        -- TODO: This is a consistency violation between the identity store and the leaderboard store
-        -- This should be corrected by inserting the score into the leaderboard in the bucket.
+        -- If the above failed because prevScore couldn't be found then this means that the identity store write
+        -- succeeded multiple times but the bucketsStore write failed multiple times. This is likely a rare occurrence but
+        -- the issue of not having transaction atomicity in SetScoreAsync is showing here. In this case, we
+        -- can iterate sequentially through all entries in the bucket to find a remove the player's previous
+        -- score
+        -- TODO: Implement the above.
+        rank = newRank
     end
-
-    local bucketKeys = self:_GetAllBucketKeys({bucketKey})
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
-        local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
-        rank += bucketRank
-    end
-    return {rank = rank, score = score}
+    
+    return {id = id, rank = rank, score = identityEntry.currentScore}
 end
 
-function RankStore:GetTopScoresAsync(limit)
-    local leaderboards = {}
-
-    -- TODO: Fetch buckets in parallel.
-    local bucketKeys = self:_GetAllBucketKeys()
-    for _, bucketKey in ipairs(bucketKeys) do
-        local leaderboard = self:_GetBucketAsync(bucketKey)
-        if #leaderboard > 0 then
-            table.insert(leaderboards, leaderboard)
-        end
-    end
- 
-    local topScores = Util.Merge(leaderboards, false, function(entry) return entry.score end, limit)
-    return topScores
+function RankStore:GetTopScoresAsync(limit : number)
+    return self._bucketsStore:GetTopScoresAsync(limit)
 end
 
 function RankStore:ClearAsync()
-    local prevMetadata = self._metadataCache:Get()
+    local prevMetadata = self._metadataStore:GetAsync()
     local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line + 1}
-    self:_SetBucketStoreMetadataAsync(newMetadata)
-    self._metadataCache:Clear()
+    self._metadataStore:SetAsync(newMetadata)
 end
 
 
-function RankStore:_SetBucketStoreMetadataAsync(metadata : metadata)
-    local success, result = pcall(function()
-        return self._bucketStore:SetAsync(self._bucketStoreMetadataKey, metadata)
-    end)
-
-    if not success then
-        error("Failed to update bucket store metadata: " .. tostring(result))
-    end
-end
-
-function RankStore:_InitBucketStoreMetadataAsync(numBuckets : number, maxBucketSize : number) : metadata
-    local success, result = pcall(function() 
-        return self._bucketStore:UpdateAsync(self._bucketStoreMetadataKey, function(metadata)
-            if metadata then
-                if numBuckets ~= metadata.numBuckets then
-                    error("Number of buckets does not match. To add a new bucket, use AddBucketAsync.")
-                end
-            else
-                metadata = {numBuckets = numBuckets, maxBucketSize = maxBucketSize, line = 1}
-            end
-            return metadata
-        end)
-    end)
-
-    if not success then
-        error("Failed to init bucket store metadata: " .. tostring(result))
-    end
-    self._metadataInitialised = true
-
-    local metadata = result
-    return metadata
-end
-
-function RankStore:_RetrieveBucketStoreMetadataAsync()
-    local success, metadata = pcall(function()
-        return self._bucketStore:GetAsync(self._bucketStoreMetadataKey)
-    end)
-    
-    if not success then
-        error("Failed to get bucket store metadata: " .. tostring(metadata))
-    end
-    
-    return metadata
-end
-
-function RankStore:_GetBucketStoreMetadataAsync() : metadata
-    if not self._metadataInitialised then
-        return self:_InitBucketStoreMetadataAsync()
-    else
-        return self:_RetrieveBucketStoreMetadataAsync()
-    end
-end
 
 
-function RankStore:_GetIdentityStoreKey(id : number)
-    return "identity_" .. tostring(id) .. "_line_" .. self._metadataCache:Get().line
-end
-
-
-function RankStore:_GetBucketKeyAsync(index)
-    local bucketKey = "bucket_line_" .. self._metadataCache:Get().line .. "_index_" .. index
-    
-    return bucketKey
-end
-
-function RankStore:_getRandomBucketIndexAsync(uniqueId : number)
-    return uniqueId % self._metadataCache:Get().numBuckets + 1
-end
-
--- If the metadataCache is expired then this function will yield.
-function RankStore:_GetBucketKeyForId(uniqueId : number)
-    local bucketIndex = self:_getRandomBucketIndexAsync(uniqueId)
-    local bucketKey = self:_GetBucketKeyAsync(bucketIndex)
-    return bucketKey
-end
-
-function RankStore:_GetAllBucketKeys(ignoreIndexes : {number}?)
-    local ignoreIndexes = ignoreIndexes or {}
-    local bucketKeys = {}
-    
-    for i = 1, self._metadataCache:Get().numBuckets do
-        if not table.find(ignoreIndexes, i) then
-            table.insert(bucketKeys, self:_GetBucketKeyAsync(i))
-        end
-    end
-    
-    return bucketKeys
-end
-
-function RankStore:_GetBucketAsync(bucketKey : number) : LeaderboardHelper.leaderboard
-    local success, result = pcall(function()
-        return self._bucketStore:GetAsync(bucketKey)
-    end)
-
-    if not success then
-        error("Failed to get bucket: " .. tostring(result))
-    end
-
-    if not result then
-        return {}
-    end
-
-    return result
-end
 
 return RankStore

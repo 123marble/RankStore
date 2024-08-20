@@ -14,10 +14,13 @@ function TimedCache.New<T>(func, ttl)
     self.expired = true
     self.ttl = ttl
     self.value = self:Get()
-
-
     
     return self
+end
+
+function TimedCache:SetOverride(value)
+    self.value = value
+    self.expired = false
 end
 
 function TimedCache:Get()
