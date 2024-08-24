@@ -59,7 +59,7 @@ function RankStore:GetEntryAsync(id : number) : entry
         return nil
     end
 
-    local rank = self._bucketsStore:FindRank(id, identityEntry.currentScore)
+    local rank = self._bucketsStore:FindRankAsync(id, identityEntry.currentScore)
     if not rank then  -- This is a consistency violation between the identity store and the leaderboard store
                         -- This should be corrected by inserting the score into the leaderboard in the bucket.
         local _, newRank = self._bucketsStore:SetScoreAsync(id, identityEntry.prevScore, identityEntry.currentScore)
@@ -85,9 +85,5 @@ function RankStore:ClearAsync()
     local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line + 1}
     self._metadataStore:SetAsync(newMetadata)
 end
-
-
-
-
 
 return RankStore
