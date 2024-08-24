@@ -1,4 +1,4 @@
--- TODO: Abstract responsibility of retrieving/updating the metadata datastore key from bucketsStore.lua into a separate class.
+-- Manages retrieving/updating the metadata datastore for a RankStore.
 local MetadataStore = {}
 MetadataStore.__index = MetadataStore
 

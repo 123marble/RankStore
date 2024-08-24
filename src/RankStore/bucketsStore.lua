@@ -17,56 +17,144 @@ function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataSto
     return self
 end
 
-function BucketsStore:SetScoreAsync(id : number, prevScore : number?, newScore : number) : (number, number)
-    local bucketKey = self:_GetBucketKeyForId(id)
-    local prevRank, newRank
+function BucketsStore:_UpdateBucketBatchAsync(bucketKey : string, ids : {number}, prevScores : {number}, newScores : {number})
+    local prevRanks, newRanks = {}, {}
     local success, result = pcall(function()
         return self._datastore:UpdateAsync(bucketKey, function(leaderboard : {LeaderboardHelper.entry})
             leaderboard = leaderboard or {}
 
-            prevRank, newRank = LeaderboardHelper.Update(leaderboard, id, prevScore, newScore)
+            for i, id in ipairs(ids) do
+                local prevRank, newRank = LeaderboardHelper.Update(leaderboard, id, prevScores[i], newScores[i])
+                table.insert(prevRanks, prevRank)
+                table.insert(newRanks, newRank)
+            end
+
             return leaderboard
         end)
     end)
 
     if not success then
-        error("Failed to set score: " .. tostring(result))
+        error("Failed to update bucket: " .. tostring(result))
     end
 
-    local scores = {newScore}
-    -- TODO: Find a way to make the below code cleaner.
-    if prevScore then
-        table.insert(scores, prevScore)
-        local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, scores)
-        prevRank += rankSums[2]
-        newRank += rankSums[1]
-    else
-        local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, scores)
-        newRank += rankSums[1]
-    end
-
-    return prevRank, newRank
+    return prevRanks, newRanks
 end
 
-function BucketsStore:FindRank(id : number, score : number) : number
-    local bucketKey = self:_GetBucketKeyForId(id)
-    local leaderboard = self:_GetBucketAsync(bucketKey)
-    local rank = LeaderboardHelper.GetRank(leaderboard, id, score)
+function BucketsStore:_GroupByBucketKey(ids : {number}, prevScores : {number?}, newScores : {number}) : {[string] : {{number}}}
+    local idToBucket = {}
+    for i, id in ipairs(ids) do
+        local bucketKey = self:_GetBucketKeyForId(id)
+        if not idToBucket[bucketKey] then
+            idToBucket[bucketKey] = {}
+            idToBucket[bucketKey][1] = {}
+            idToBucket[bucketKey][2] = {}
+            idToBucket[bucketKey][3] = {}
+        end
 
-    if not rank then
-        return nil
+        local prevScore = prevScores[i]
+        local newScore = newScores[i]
+
+        table.insert(idToBucket[bucketKey][1], id)
+        table.insert(idToBucket[bucketKey][2], prevScore)
+        table.insert(idToBucket[bucketKey][3], newScore)
+    end
+    return idToBucket
+end
+
+function BucketsStore:SetScoreBatchAsync(ids : {number}, prevScores : {number?}, newScores : number) : ({number}, {number})
+    local groupedIds = self:_GroupByBucketKey(ids, prevScores, newScores)
+    local primaryBucketPrevRanks, primaryBucketNewRanks = {}, {}
+    for bucketKey, v in pairs(groupedIds) do
+        local ids, prevScores, newScores = table.unpack(v)
+
+        local bucketPrevRanks, bucketNewRanks = self:_UpdateBucketBatchAsync(bucketKey, ids, prevScores, newScores)
+        for i = 1, #bucketNewRanks do
+            primaryBucketPrevRanks[#primaryBucketNewRanks+1] = bucketPrevRanks[i]
+            primaryBucketNewRanks[#primaryBucketNewRanks+1] = bucketNewRanks[i]
+        end
+    end
+    
+    local prevRanks, newRanks = primaryBucketPrevRanks, primaryBucketNewRanks
+    local otherBucketPrevRanksSummed, otherBucketNewRanksSummed = self:_FindRankChangeBatchAsync(ids, prevScores, newScores, false)
+    for i = 1, #otherBucketNewRanksSummed do
+        if prevRanks[i] then
+            prevRanks[i] += otherBucketPrevRanksSummed[i]
+        end
+        newRanks[i] += otherBucketNewRanksSummed[i]
     end
 
-    local rankSums = self:_GetSummedRanksOverBuckets({bucketKey}, {score})
-    rank += rankSums[1]
-
-    return rank
+    return prevRanks, newRanks
 end
+
+function BucketsStore:SetScoreAsync(id : number, prevScore : number?, newScore : number) : (number, number)
+    local prevRanks, newRanks = self:SetScoreBatchAsync({id}, {prevScore}, {newScore})
+    return prevRanks[1], newRanks[1]
+end
+
+-- Intended to be used in combination with _MapGetBucketsAsync
+local function _SumBucket(bucketsStore, bucketKey, leaderboard, ...)
+    local ids, scores, ranks, includePrimary = table.unpack({...})
+    
+    for i, id in ipairs(ids) do
+        if not scores[i] then
+            ranks[i] = nil
+            continue
+        end
+
+        local bucketRank = 0
+        if bucketsStore:_GetBucketKeyForId(id) == bucketKey then
+            if includePrimary then
+                bucketRank = LeaderboardHelper.GetRank(leaderboard, id, scores[i])
+            end
+        else
+            bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, scores[i]) - 1
+        end
+
+        ranks[i] += bucketRank
+    end
+end
+
+-- Intended to be used in combination with _MapGetBucketsAsync
+local function _SumBucketChange(bucketsStore, bucketKey, leaderboard, ...)
+    local ids, prevScores, newScores, prevRanks, newRanks, includePrimary = table.unpack({...})
+
+    _SumBucket(bucketsStore, bucketKey, leaderboard, ids, prevScores, prevRanks, includePrimary)
+    _SumBucket(bucketsStore, bucketKey, leaderboard, ids, newScores, newRanks, includePrimary)
+end
+
+function BucketsStore:_FindRankChangeBatchAsync(ids : {number}, prevScores : {number?}, newScores : {number}, includePrimary : boolean) : ({number}, {number})
+    local prevRanks = {}
+    local newRanks = {}
+    for i = 1, #ids do
+        prevRanks[i] = 0
+        newRanks[i] = 0
+    end
+
+    self:_MapGetBucketsAsync(_SumBucketChange, nil, false, ids, prevScores, newScores, prevRanks, newRanks, includePrimary)
+
+    return prevRanks, newRanks
+end
+
+function BucketsStore:FindRankBatchAsync(ids : {number}, scores : {number}) : {number}
+    local ranks = {}
+    for i = 1, #ids do
+        ranks[i] = 0
+    end
+    local includePrimary = true
+    self:_MapGetBucketsAsync(_SumBucket, nil, true, ids, scores, ranks, includePrimary)
+    return ranks
+end
+
+function BucketsStore:FindRankAsync(id : number, score : number) : {number}
+    local ranks = self:FindRankBatchAsync({id}, {score})
+    return ranks[1]
+end
+
 
 function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     local leaderboards = {}
 
-    self:_MapGetBucketsAsync(function(leaderboard)
+    self:_MapGetBucketsAsync(function(_, _, leaderboard)
         if #leaderboard > 0 then
             table.insert(leaderboards, leaderboard)
         end
@@ -76,12 +164,12 @@ function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     return topScores
 end
 
-function BucketsStore:_MapGetBucketsAsync(func : (leaderboard : {entry}) -> any, ignoreKeys : {string}, parallel : boolean?, ...)
+function BucketsStore:_MapGetBucketsAsync(func : (bucketsStore : {}, bucketKey : string, leaderboard : {entry}, any...) -> any, ignoreKeys : {string}?, parallel : boolean?, ...)
     parallel = parallel or false
 
     local function runMap(bucketKey, ...)
         local leaderboard = self:_GetBucketAsync(bucketKey)
-        func(leaderboard, ...)
+        func(self, bucketKey, leaderboard, ...)
     end
     
     local bucketKeys = self:_GetAllBucketKeys(ignoreKeys)
@@ -95,25 +183,6 @@ function BucketsStore:_MapGetBucketsAsync(func : (leaderboard : {entry}) -> any,
             runMap(bucketKey, ...)
         end
     end
-end
-
-function BucketsStore:_GetSummedRanksOverBuckets(ignoreKeys : {string}, scores : {number}) : number
-    local ranks = {}
-    for i = 1, #scores do
-        ranks[i] = 0
-    end
-
-    local function sumBucket(leaderboard, ...)
-        local scores, ranks = table.unpack({...})
-        for i, score in ipairs(scores) do
-            local bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, score) - 1
-            ranks[i] += bucketRank
-        end
-    end
-
-    self:_MapGetBucketsAsync(sumBucket, ignoreKeys, true, scores, ranks)
-
-    return ranks
 end
 
 function BucketsStore:_GetBucketKeyAsync(index)

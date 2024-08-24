@@ -1,6 +1,7 @@
 local Util = {}
 
--- Generic merge function for a collection of sorted tables
+-- Generic merge for a collection of sorted tables
+-- The merge part of the mergesort algorithm for efficient merging of already sorted tables.
 -- @param tables: An array of sorted tables to merge
 -- @param ascending: Boolean, true for ascending order, false for descending
 -- @param getKey: Function to get the comparison key from each element
