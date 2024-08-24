@@ -1,3 +1,10 @@
+--  ____             _     ____  _                 
+-- |  _ \ __ _ _ __ | | __/ ___|| |_ ___  _ __ ___ 
+-- | |_) / _` | '_ \| |/ /\___ \| __/ _ \| '__/ _ \
+-- |  _ < (_| | | | |   <  ___) | || (_) | | |  __/
+-- |_| \_\__,_|_| |_|_|\_\|____/ \__\___/|_|  \___|
+--
+--- @class RankStore
 local IdentityStore = require(script.Parent.RankStore.identityStore)
 local BucketsStore = require(script.Parent.RankStore.bucketsStore)
 local MetadataStore = require(script.Parent.RankStore.metadataStore)
@@ -11,12 +18,18 @@ RankStore.__index = RankStore
 --     return string.pack(">I3I3", userId, score)
 -- end
 
+--- @type entry {id: string, rank: number, score: number}
+--- @within RankStore
+--- An array of strings, a number, or nil.
 export type entry = {
     id: string,
     rank : number,
     score: number
 }
 
+--- @type setResult {prevRank: number, prevScore: number, newRank: number, newScore: number}
+--- @within RankStore
+--- An array of strings, a number, or nil.
 export type setResult = {
     prevRank : number,
     prevScore : number,
@@ -24,6 +37,14 @@ export type setResult = {
     newScore : number
 }
 
+--[=[
+Creates or retrieves a RankStore with the provided name.
+@param name -- Name of the RankStore
+@param numBuckets -- The number of buckets to use
+@param maxBucketSize -- Maximum number of entries in each bucket
+@return RankStore
+@yields
+]=]
 function RankStore.GetRankStore(name : string, numBuckets : number, maxBucketSize : number)
     local self = setmetatable({}, RankStore)
     self._name = name
@@ -36,8 +57,13 @@ function RankStore.GetRankStore(name : string, numBuckets : number, maxBucketSiz
     return self
 end
 
--- 2 UpdateAsync requests
-function RankStore:SetScoreAsync(id : number, score : number)
+--[=[
+Sets the score for the given id.
+@param id -- The id of the entry. A number to uniquely identify the entry, typically a userId.
+@param score -- The score to set
+@yields
+]=]
+function RankStore:SetScoreAsync(id : number, score : number) : setResult
     local identityEntry = self._identityStore:Update(id, score)
 
     local prevRank, newRank = self._bucketsStore:SetScoreAsync(id, identityEntry.prevScore, score)
@@ -45,12 +71,11 @@ function RankStore:SetScoreAsync(id : number, score : number)
     return {prevRank = prevRank, prevScore = identityEntry.prevScore, newRank = newRank, newScore = score}
 end
 
--- 1. Get the score from the identity store
--- 2. Get the rank from the relevant bucket store using leaderboardHelper. If the identity is not found then this is a sign that there was a write failure
---      during the second datastore update in SetScoreAsync. This should be corrected by intserting the score into the leaderboard in the bucket.
--- 3. Get the rank placement in the other buckets
--- 4. Sum the ranks to get the final rank.
--- numBuckets + 1 GetAsync requests
+--[=[
+Gets the entry for the given id.
+@param id -- The id of the entry.
+@yields
+]=]
 function RankStore:GetEntryAsync(id : number) : entry
     local identityEntry = self._identityStore:Get(id)
 
@@ -76,10 +101,23 @@ function RankStore:GetEntryAsync(id : number) : entry
     return {id = id, rank = rank, score = identityEntry.currentScore}
 end
 
-function RankStore:GetTopScoresAsync(limit : number)
-    return self._bucketsStore:GetTopScoresAsync(limit)
+--[=[
+Gets the top n scores.
+@param n -- The number of scores to get
+@return {entry}
+@yields
+]=]
+function RankStore:GetTopScoresAsync(n : number) : {entry}
+    return self._bucketsStore:GetTopScoresAsync(n)
 end
 
+--[=[
+Clears all entries in the RankStore.
+
+This actually just increments the keys used in the underlying DataStore so no data is actually deleted. However there is 
+no support to rollback after calling this function at present.
+@yields
+]=]
 function RankStore:ClearAsync()
     local prevMetadata = self._metadataStore:GetAsync()
     local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line + 1}
