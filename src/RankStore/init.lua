@@ -108,7 +108,11 @@ Gets the top n scores.
 @yields
 ]=]
 function RankStore:GetTopScoresAsync(n : number) : {entry}
-    return self._bucketsStore:GetTopScoresAsync(n)
+    local leaderboard = self._bucketsStore:GetTopScoresAsync(n)
+    for i, v in ipairs(leaderboard) do
+        v.rank = i
+    end
+    return leaderboard
 end
 
 --[=[
