@@ -38,7 +38,7 @@ export type setResult = {
 }
 
 --[=[
-Creates or retrieves a RankStore with the provided name.
+Creates or retrieves a Rank Store with the provided name.
 @param name -- Name of the RankStore
 @param numBuckets -- The number of buckets to use
 @param maxBucketSize -- Maximum number of entries in each bucket
