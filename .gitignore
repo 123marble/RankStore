@@ -8,3 +8,6 @@
 /src/server/*
 
 /build
+
+/wally.lock
+/Packages
