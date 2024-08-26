@@ -25,6 +25,8 @@ print(rankStore:GetTopScoresAsync(10))
 
 print(rankStore:GetEntryAsync(3))
     
+
+
 -- for i = 1, 100 do
 --     for j = 1, 1000 do
 --         local start = os.clock()

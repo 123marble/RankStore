@@ -14,6 +14,9 @@ function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataSto
     self._datastore = Shared.GetDataStore(name)
     self._metadataStore = metadataStore
 
+    self._leaderboardHelper = LeaderboardHelper.New()
+    self._leaderboardHelper:SetAccessor(LeaderboardHelper.compressedLeaderboardAccessor)
+
     return self
 end
 
@@ -21,10 +24,11 @@ function BucketsStore:_UpdateBucketBatchAsync(bucketKey : string, ids : {number}
     local prevRanks, newRanks = {}, {}
     local success, result = pcall(function()
         return self._datastore:UpdateAsync(bucketKey, function(leaderboard : {LeaderboardHelper.entry})
-            leaderboard = leaderboard or {}
+            leaderboard = leaderboard or self._leaderboardHelper:GenerateEmpty()
 
             for i, id in ipairs(ids) do
-                local prevRank, newRank = LeaderboardHelper.Update(leaderboard, id, prevScores[i], newScores[i])
+                local _leaderboard, prevRank, newRank = self._leaderboardHelper:Update(leaderboard, id, prevScores[i], newScores[i])
+                leaderboard = _leaderboard
                 table.insert(prevRanks, prevRank)
                 table.insert(newRanks, newRank)
             end
@@ -104,10 +108,10 @@ local function _SumBucket(bucketsStore, bucketKey, leaderboard, ...)
         local bucketRank = 0
         if bucketsStore:_GetBucketKeyForId(id) == bucketKey then
             if includePrimary then
-                bucketRank = LeaderboardHelper.GetRank(leaderboard, id, scores[i])
+                bucketRank = bucketsStore._leaderboardHelper:GetRank(leaderboard, id, scores[i])
             end
         else
-            bucketRank = LeaderboardHelper.GetInsertPos(leaderboard, scores[i]) - 1
+            bucketRank = bucketsStore._leaderboardHelper:GetInsertPos(leaderboard, scores[i]) - 1
         end
 
         ranks[i] += bucketRank
@@ -160,7 +164,7 @@ function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
         end
     end, nil, true)
 
-    local topScores = Util.Merge(leaderboards, false, function(entry) return entry.score end, limit)
+    local topScores = Util.Merge(leaderboards, self._leaderboardHelper._accessor, false, function(entry) return entry.score end, limit)
     return topScores
 end
 
@@ -205,7 +209,7 @@ function BucketsStore:_GetBucketAsync(bucketKey : number) : {entry}
     end
 
     if not result then
-        return {}
+        return self._leaderboardHelper:GenerateEmpty()
     end
 
     return result
