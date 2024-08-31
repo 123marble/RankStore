@@ -1,13 +1,16 @@
+--- @class Util
+
 local HttpService = game:GetService("HttpService")
 local Util = {}
 
 --[=[
+@private
 Function to compare two tables for deep equality.
 @return boolean
 Source: https://stackoverflow.com/a/25976660
 A request for a TestEZ native implementation of this function is tracked here: https://github.com/Roblox/testez/issues/46
 ]=]
-function Util.DeepEqual(table1, table2)
+function Util.DeepEqual(table1 : {}, table2 : {})
     local avoid_loops = {}
     local function recurse(t1, t2)
        if type(t1) ~= type(t2) then return false end
