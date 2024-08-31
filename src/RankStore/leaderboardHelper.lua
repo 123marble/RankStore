@@ -20,18 +20,18 @@ export type leaderboardAccessor = {
 }
 
 
-local ID_ENCODE_LENGTH = 2 -- userids are over 10 characters long https://devforum.roblox.com/t/userids-are-going-over-32-bit-on-december-7th/903982
-                            -- 2 utf8 characters can represent a max of 10 character numbers, 3 will represent a max of 15 and be safe.
-local SCORE_ENCODE_LENGTH = 2
+local ID_ENCODE_LENGTH = 5 -- userids are 10 characters long currently https://devforum.roblox.com/t/userids-are-going-over-32-bit-on-december-7th/903982
+                            -- 5 bytes gives us 2^40 which gives leeway for the roblox playerbase to continue to grow.
+local SCORE_ENCODE_LENGTH = 4
 local RECORD_SIZE = ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH
 
 function LeaderboardHelper._CompressRecord(id : number, score : number) : string
-    return Utf8Compress.Compress(id, ID_ENCODE_LENGTH) .. Utf8Compress.Compress(score, SCORE_ENCODE_LENGTH)
+    return Utf8Compress.CompressInt(id, 5) .. Utf8Compress.CompressInt(score, 4)
 end
 
 function LeaderboardHelper._DecompressRecord(utf8 : string) : string
-    local id = Utf8Compress.Decompress(utf8Sub(utf8, 1, ID_ENCODE_LENGTH))
-    local score = Utf8Compress.Decompress(utf8Sub(utf8, ID_ENCODE_LENGTH + 1, ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH))
+    local id = Utf8Compress.DecompressInt(utf8Sub(utf8, 1, ID_ENCODE_LENGTH), 5)
+    local score = Utf8Compress.DecompressInt(utf8Sub(utf8, ID_ENCODE_LENGTH + 1, ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH), 4)
     return id, score
 end
 

@@ -15,11 +15,11 @@ return function()
         print("test completed...")
     end)
     
-    itFOCUS("TestLeaderboardHelperNew", function()
+    it("TestLeaderboardHelperNew", function()
         expect(leaderboardHelper).to.be.a("table")
     end)
 
-    itFOCUS("TestLeaderboardHelperGenerateEmpty", function()
+    it("TestLeaderboardHelperGenerateEmpty", function()
         local emptyLeaderboard = leaderboardHelper:GenerateEmpty()
         expect(emptyLeaderboard).to.be.equal("")
     end)
