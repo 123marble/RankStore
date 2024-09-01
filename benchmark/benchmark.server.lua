@@ -27,14 +27,19 @@ print(rankStore:GetEntryAsync(3))
     
 
 
--- for i = 1, 100 do
+-- for i = 4, 100 do
 --     for j = 1, 1000 do
 --         local start = os.clock()
         
---         local result = rankStore:SetScoreAsync(i*1000+j, math.random(1,10000000)/1000)
+--         local success, result = pcall(function() 
+--             return rankStore:SetScoreAsync((i-1)*1000+j, math.random(1,10000000))
+--         end)
+--         if not success then
+--             warn(tostring(result))
+--         end
         
 --         print(result)
---         print("Time taken to set score for id", i*1000+j, ":", os.clock() - start)
+--         print("Time taken to set score for id", (i-1)*1000+j, ":", os.clock() - start)
 --         printDatastoreBudget()
 --         print("====")
 --         task.wait(0.5)

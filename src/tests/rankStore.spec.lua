@@ -8,7 +8,7 @@ return function()
         expect.extend(Util.GetExpectationExtensions())
         local numBuckets = 4
         local maxBucketsSize = 10
-        rankStore = RankStore.GetRankStore("UnitTestsRankStore_1", numBuckets, maxBucketsSize)
+        rankStore = RankStore.GetRankStore("UnitTestsRankStore_3", numBuckets, maxBucketsSize)
         rankStore:ClearAsync()
         return rankStore
     end)
@@ -96,4 +96,11 @@ return function()
         expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual(expectedLeaderboard)
     end)
 
+    it("TestSetScoreBucketsStoreErrorMultiple", function()
+ 
+    end)
+
+    it("TestBucketSizeExceeded", function()
+
+    end)
 end

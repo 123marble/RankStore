@@ -21,24 +21,37 @@ function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataSto
 end
 
 function BucketsStore:_UpdateBucketBatchAsync(bucketKey : string, ids : {number}, prevScores : {number}, newScores : {number})
+    print(self._metadataStore:GetAsync())
+    local maxBucketSize = self._metadataStore:GetAsync().maxBucketSize
+    local updateFailureReason = ""
     local prevRanks, newRanks = {}, {}
-    local success, result = pcall(function()
+    local _, result = pcall(function()
         return self._datastore:UpdateAsync(bucketKey, function(leaderboard : {LeaderboardHelper.entry})
             leaderboard = leaderboard or self._leaderboardHelper:GenerateEmpty()
 
+            print(#leaderboard + Shared.RECORD_BYTES*#ids)
+            if #leaderboard + Shared.RECORD_BYTES*#ids > maxBucketSize then
+                updateFailureReason = "Not enough space in bucket."
+                return nil
+            end
+            
             for i, id in ipairs(ids) do
-                local _leaderboard, prevRank, newRank = self._leaderboardHelper:Update(leaderboard, id, prevScores[i], newScores[i])
+                local success, _leaderboard, prevRank, newRank = pcall(function() return self._leaderboardHelper:Update(leaderboard, id, prevScores[i], newScores[i]) end)
+                if not success then
+                    updateFailureReason = "Error occurred during UpdateAsync: " .. tostring(_leaderboard)
+                    return nil
+                end
                 leaderboard = _leaderboard
-                table.insert(prevRanks, prevRank)
                 table.insert(newRanks, newRank)
+                prevRanks[#newRanks] = prevRank
             end
 
             return leaderboard
         end)
     end)
 
-    if not success then
-        error("Failed to update bucket: " .. tostring(result))
+    if not result then
+        error("Failed to update bucket " .. bucketKey .. ": " .. updateFailureReason)
     end
 
     return prevRanks, newRanks
@@ -58,27 +71,35 @@ function BucketsStore:_GroupByBucketKey(ids : {number}, prevScores : {number?}, 
         local prevScore = prevScores[i]
         local newScore = newScores[i]
 
-        table.insert(idToBucket[bucketKey][1], id)
-        table.insert(idToBucket[bucketKey][2], prevScore)
-        table.insert(idToBucket[bucketKey][3], newScore)
+        local bucketGroupIds = idToBucket[bucketKey][1]
+        local bucketGroupPrevScores = idToBucket[bucketKey][2]
+        local bucketGroupNewScores = idToBucket[bucketKey][3]
+        table.insert(bucketGroupIds, id)
+        bucketGroupPrevScores[#bucketGroupIds] = prevScore -- using #bucketGroupIds in case prevScores has nils
+        bucketGroupNewScores[#bucketGroupIds] = newScore
     end
     return idToBucket
 end
 
 function BucketsStore:SetScoreBatchAsync(ids : {number}, prevScores : {number?}, newScores : number) : ({number}, {number})
     local groupedIds = self:_GroupByBucketKey(ids, prevScores, newScores)
-    local primaryBucketPrevRanks, primaryBucketNewRanks = {}, {}
+    local primaryBucketIds, primaryBucketPrevRanks, primaryBucketNewRanks, primaryBucketPrevScores, primaryBucketNewScores = {}, {}, {}, {}, {}
     for bucketKey, v in pairs(groupedIds) do
-        local ids, prevScores, newScores = table.unpack(v)
+        local bucketsIds, bucketPrevScores, bucketNewScores = table.unpack(v)
 
-        local bucketPrevRanks, bucketNewRanks = self:_UpdateBucketBatchAsync(bucketKey, ids, prevScores, newScores)
+        local bucketPrevRanks, bucketNewRanks = self:_UpdateBucketBatchAsync(bucketKey, bucketsIds, bucketPrevScores, bucketNewScores)
         for i = 1, #bucketNewRanks do
-            primaryBucketPrevRanks[#primaryBucketNewRanks+1] = bucketPrevRanks[i]
-            primaryBucketNewRanks[#primaryBucketNewRanks+1] = bucketNewRanks[i]
+            local newIndex = #primaryBucketNewRanks+1
+            primaryBucketIds[newIndex] = bucketsIds[i]
+            primaryBucketPrevRanks[newIndex] = bucketPrevRanks[i]
+            primaryBucketNewRanks[newIndex] = bucketNewRanks[i]
+            primaryBucketPrevScores[newIndex] = bucketPrevScores[i]
+            primaryBucketNewScores[newIndex] = bucketNewScores[i]
         end
     end
     
-    local prevRanks, newRanks = primaryBucketPrevRanks, primaryBucketNewRanks
+    local ids, prevRanks, newRanks, prevScores, newScores = primaryBucketIds, primaryBucketPrevRanks, primaryBucketNewRanks, primaryBucketPrevScores, primaryBucketNewScores
+
     local otherBucketPrevRanksSummed, otherBucketNewRanksSummed = self:_FindRankChangeBatchAsync(ids, prevScores, newScores, false)
     for i = 1, #otherBucketNewRanksSummed do
         if prevRanks[i] then
@@ -230,11 +251,9 @@ function BucketsStore:_GetAllBucketKeys(ignoreKeys : {string}?)
         if not table.find(ignoreKeys, key) then
             table.insert(bucketKeys, key)
         end
-        
     end
     
     return bucketKeys
 end
-
 
 return BucketsStore

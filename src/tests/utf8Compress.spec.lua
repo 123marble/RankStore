@@ -11,7 +11,7 @@ return function()
         print("test completed...")
     end)
     
-    it("TestCompressMin", function()
+    it("TestCompressInt8", function()
         local actual = Utf8Compress.CompressInt(20, 1)
         
         expect(#actual).to.be.equal(1)
@@ -20,12 +20,12 @@ return function()
         expect(decompressed).to.be.equal(20)
     end)
 
-    it("TestCompressLarge", function()
-        local actual = Utf8Compress.CompressInt(123456123456, 6)
+    it("TestCompressInt40", function()
+        local actual = Utf8Compress.CompressInt(12345678901, 6)
         
         expect(#actual).to.be.equal(6)
 
         local decompressed = Utf8Compress.DecompressInt(actual)
-        expect(decompressed).to.be.equal(123456123456)
+        expect(decompressed).to.be.equal(12345678901)
     end)
 end

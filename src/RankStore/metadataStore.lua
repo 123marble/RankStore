@@ -58,7 +58,7 @@ function MetadataStore:_Init(numBuckets : number, maxBucketSize : number) : meta
         return self._datastore:UpdateAsync(self._bucketStoreMetadataKey, function(metadata)
             if metadata then
                 if numBuckets ~= metadata.numBuckets then
-                    error("Number of buckets does not match. To add a new bucket, use AddBucketAsync.")
+                    error("Number of buckets does not match. It is not possible to add or remove buckets on an existing rank store.")
                 end
             else
                 metadata = {numBuckets = numBuckets, maxBucketSize = maxBucketSize, line = 1}
