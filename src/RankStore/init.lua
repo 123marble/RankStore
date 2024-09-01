@@ -124,8 +124,12 @@ no support to rollback after calling this function at present.
 ]=]
 function RankStore:ClearAsync()
     local prevMetadata = self._metadataStore:GetAsync()
-    local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line + 1, maxBucketSize = prevMetadata.maxBucketSize}
+    local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line, maxBucketSize = prevMetadata.maxBucketSize, version = prevMetadata.version+1}
     self._metadataStore:SetAsync(newMetadata)
+end
+
+function RankStore:UpdateNumBucketsAsync(n : number)
+    self._bucketsStore:UpdateNumBucketsAsync(n)
 end
 
 return RankStore

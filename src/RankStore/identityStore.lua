@@ -34,7 +34,7 @@ function IdentityStore:Update(id : number, score : number) : identityEntry
 end
 
 function IdentityStore:_GetKey(id : number)
-    return "identity_" .. tostring(id) .. "_line_" .. self._metadataStore:GetAsync().line
+    return "identity_" .. tostring(id) .. "_version_" .. self._metadataStore:GetAsync().version
 end
 
 function IdentityStore:Get(id : number) : identityEntry

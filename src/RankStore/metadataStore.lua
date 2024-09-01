@@ -11,7 +11,15 @@ local BUCKET_METADATA_TTL_SECS = 60*60
 type metadata = {
     numBuckets : number,
     maxBucketSize : number,
-    line : number
+    line : number,
+    version : number
+}
+
+local defaultMetadata = {
+    numBuckets = 4,
+    maxBucketSize = 4*1024*1024 - 50,
+    line = 1,
+    version = 1
 }
 
 function MetadataStore.GetMetadataStore(name : string, numBuckets : number, maxBucketSize : number)
@@ -32,9 +40,14 @@ function MetadataStore.GetMetadataStore(name : string, numBuckets : number, maxB
     return self
 end
 
-function MetadataStore:GetAsync() : metadata
+function MetadataStore:GetAsync(useCache : boolean) : metadata
+    useCache = useCache == nil and true or useCache
     if not self._metadataInitialised then
         error("Metadata store not initialised, call GetMetadataStore first.")
+    end
+
+    if not useCache then
+        self._metadataCache:Clear()
     end
 
     return self._metadataCache:Get()
@@ -58,10 +71,16 @@ function MetadataStore:_Init(numBuckets : number, maxBucketSize : number) : meta
         return self._datastore:UpdateAsync(self._bucketStoreMetadataKey, function(metadata)
             if metadata then
                 if numBuckets ~= metadata.numBuckets then
-                    error("Number of buckets does not match. It is not possible to add or remove buckets on an existing rank store.")
+                    error("Number of buckets does not match with existing number. Use RankStore.UpdateNumBuckets to update the number of buckets.")
+                end
+
+                for key, value in pairs(defaultMetadata) do -- Hit this usually when the metadata schema is changed, which allows existing RankStores to be updated.
+                    if metadata[key] == nil then
+                        metadata[key] = value
+                    end
                 end
             else
-                metadata = {numBuckets = numBuckets, maxBucketSize = maxBucketSize, line = 1}
+                metadata = defaultMetadata
             end
             return metadata
         end)
