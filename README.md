@@ -30,7 +30,7 @@ print(rankStore:GetTopScoresAsync(10))
 
 print(rankStore:GetEntryAsync(3))
 ```
-
+Full API is available on 123marble.github.io/RankStore.
 
 # Performance
 
