@@ -36,7 +36,7 @@ Full API is available on [123marble.github.io/RankStore/api/RankStore](https://1
 | Method                | Algorithm Time Complexity | Network Time Complexity | Datastore Requests       |
 |-----------------------|---------------------------|-------------------------|--------------------------|
 | GetRankStore          | O(1)                      | O(1)                    | 1 GetAsync               |
-| SetScoreAsync         | O(log n)                  | O(n)                    | 2 UpdateAsync<br> N-1 GetAsync |
+| SetScoreAsync         | O(log n)                  | O(n)                    | 2 UpdateAsync<br /> N-1 GetAsync |
 | GetEntryAsync         | O(log n)                  | O(n)                    | N GetAsync               |
 | GetTopScoresAsync (k) | O(k)                      | O(n)                    | N GetAsync               |
 | RemoveEntryAsync            |                     |                 |            |
@@ -49,7 +49,7 @@ Full API is available on [123marble.github.io/RankStore/api/RankStore](https://1
 **NB: The N GetAsync requests are always made in parallel.**
 
 ## Concurrency
-- How DataStore handles concurrent requests is [not documented]().
+- How DataStore handles concurrent requests is not documented.
 - Number of Datastore keys is effectively the maximum number of maximum concurrent SetScoreAsync requests.
 
 ## DataStore Limits
