@@ -4,6 +4,7 @@ MetadataStore.__index = MetadataStore
 
 local Shared = require(script.Parent.shared)
 local TimedCache = require(script.Parent.timedCache)
+local CachedDataStore = require(script.Parent.cachedDataStore)
 
 local BUCKET_METADATA_TTL_SECS = 60*60
 
@@ -24,33 +25,24 @@ local defaultMetadata = {
 
 function MetadataStore.GetMetadataStore(name : string, numBuckets : number, maxBucketSize : number)
     local self = setmetatable({}, MetadataStore)
-    self._datastore = Shared.GetDataStore(name)
+
+     -- Note that using a timed cache means that changes to the metadata on other servers will not take effect until the cache expires.
+    self._datastore = CachedDataStore.New(Shared.GetDataStore(name), BUCKET_METADATA_TTL_SECS)
 
     self._metadataInitialised = false
     self._bucketStoreMetadataKey = "metadata"
 
     self:_Init(numBuckets, maxBucketSize)
-    self._metadataCache = TimedCache.New(
-        function()
-            return self:_Retrieve() 
-        end, 
-        BUCKET_METADATA_TTL_SECS
-    ) :: TimedCache.TimedCache<metadata>  -- Note that using a timed cache means that changes to the metadata on other servers will not take effect until the cache expires.
-
     return self
 end
 
-function MetadataStore:GetAsync(useCache : boolean) : metadata
+function MetadataStore:GetAsync(useCache : boolean?) : metadata
     useCache = useCache == nil and true or useCache
     if not self._metadataInitialised then
         error("Metadata store not initialised, call GetMetadataStore first.")
     end
 
-    if not useCache then
-        self._metadataCache:Clear()
-    end
-
-    return self._metadataCache:Get()
+    return self:_Retrieve(useCache)
 end
 
 function MetadataStore:SetAsync(metadata : metadata)
@@ -61,8 +53,6 @@ function MetadataStore:SetAsync(metadata : metadata)
     if not success then
         error("Failed to update bucket store metadata: " .. tostring(result))
     end
-
-    self._metadataCache:SetOverride(metadata) -- Update the cache immediately
 end
 
 
@@ -73,6 +63,9 @@ function MetadataStore:_Init(numBuckets : number, maxBucketSize : number) : meta
                 if numBuckets ~= metadata.numBuckets then
                     error("Number of buckets does not match with existing number. Use RankStore.UpdateNumBuckets to update the number of buckets.")
                 end
+                if maxBucketSize ~= metadata.maxBucketSize then
+                    error("Max bucket size does not match with existing number. Cannot change max bucket size after creation.")
+                end
 
                 for key, value in pairs(defaultMetadata) do -- Hit this usually when the metadata schema is changed, which allows existing RankStores to be updated.
                     if metadata[key] == nil then
@@ -81,9 +74,11 @@ function MetadataStore:_Init(numBuckets : number, maxBucketSize : number) : meta
                 end
             else
                 metadata = defaultMetadata
+                metadata.numBuckets = numBuckets or metadata.numBuckets
+                metadata.maxBucketSize = maxBucketSize or metadata.maxBucketSize
             end
             return metadata
-        end)
+        end, false)
     end)
 
     if not success then
@@ -95,9 +90,9 @@ function MetadataStore:_Init(numBuckets : number, maxBucketSize : number) : meta
     return metadata
 end
 
-function MetadataStore:_Retrieve()
+function MetadataStore:_Retrieve(useCache : boolean) : metadata
     local success, metadata = pcall(function()
-        return self._datastore:GetAsync(self._bucketStoreMetadataKey)
+        return self._datastore:GetAsync(self._bucketStoreMetadataKey, useCache)
     end)
     
     if not success then

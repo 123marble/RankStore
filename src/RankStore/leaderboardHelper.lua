@@ -25,13 +25,17 @@ local ID_ENCODE_LENGTH = 5 -- userids are 10 characters long currently https://d
 local SCORE_ENCODE_LENGTH = 4
 local RECORD_SIZE = ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH
 
+LeaderboardHelper.ID_ENCODE_LENGTH = ID_ENCODE_LENGTH
+LeaderboardHelper.SCORE_ENCODE_LENGTH = SCORE_ENCODE_LENGTH
+LeaderboardHelper.RECORD_SIZE = RECORD_SIZE
+
 function LeaderboardHelper._CompressRecord(id : number, score : number) : string
-    return Utf8Compress.CompressInt(id, 5) .. Utf8Compress.CompressInt(score, 4)
+    return Utf8Compress.CompressInt(id, ID_ENCODE_LENGTH) .. Utf8Compress.CompressInt(score, SCORE_ENCODE_LENGTH)
 end
 
 function LeaderboardHelper._DecompressRecord(utf8 : string) : string
-    local id = Utf8Compress.DecompressInt(utf8Sub(utf8, 1, ID_ENCODE_LENGTH), 5)
-    local score = Utf8Compress.DecompressInt(utf8Sub(utf8, ID_ENCODE_LENGTH + 1, ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH), 4)
+    local id = Utf8Compress.DecompressInt(utf8Sub(utf8, 1, ID_ENCODE_LENGTH), ID_ENCODE_LENGTH)
+    local score = Utf8Compress.DecompressInt(utf8Sub(utf8, ID_ENCODE_LENGTH + 1, ID_ENCODE_LENGTH + SCORE_ENCODE_LENGTH), SCORE_ENCODE_LENGTH)
     return id, score
 end
 
@@ -125,6 +129,10 @@ function LeaderboardHelper.New()
     local self = setmetatable({}, LeaderboardHelper)
     self._accessor = LeaderboardHelper.defaultLeaderboardAccessor
     return self
+end
+
+function LeaderboardHelper:Length(leaderboard: {entry}): number
+    return self._accessor.Length(leaderboard)
 end
 
 function LeaderboardHelper:GenerateEmpty()

@@ -1,7 +1,7 @@
 local RankStore = require(game.ServerScriptService.RankStore)
 local DataStoreService = game:GetService("DataStoreService")
 
-local rankStore = RankStore.GetRankStore("TestLeaderboard_1", 4)
+local rankStore = RankStore.GetRankStore("TestLeaderboard_20", 4, 1000, 3, true)
 
 function printDatastoreBudget()
     local updateBudget = DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.UpdateAsync)
@@ -24,8 +24,42 @@ print(rankStore:SetScoreAsync(1, 65))
 print(rankStore:GetTopScoresAsync(10))
 
 print(rankStore:GetEntryAsync(3))
-    
 
+
+-- local numBuckets = 10 -- 10 buckets is 466,028 * 10 = 4,660,280 total records
+-- local maxBucketsSize = 4*1024*1024 - 50 -- 9 bytes per record = 466,028 records per bucket
+
+-- local count = 1
+-- function writeBatch(rankStore, numRecords)
+
+--     local ids = {}
+--     local prevScores = {}
+--     local newScores = {}
+
+--     for i = 1, numRecords do
+--         table.insert(ids, count)
+--         table.insert(prevScores, nil)
+--         table.insert(newScores, math.random(1,10000000))
+--         count += 1
+--     end
+--     local start = os.clock()
+--     rankStore._bucketsStore:SetScoreBatchAsync(ids, prevScores, newScores)
+--     print("Time taken to set scores for", #ids, "ids:", os.clock() - start)
+-- end
+
+-- local numBuckets = 10
+-- local maxBucketsSize = 4000000
+-- local rankStore = RankStore.GetRankStore("TestLeaderboard_10", numBuckets, maxBucketsSize, 3, false)
+-- rankStore:ClearAsync()
+
+-- local maxRecordsPerBuckets = math.floor(maxBucketsSize/9)
+-- print(maxRecordsPerBuckets)
+
+-- writeBatch(rankStore, maxRecordsPerBuckets*5)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets*4)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
 
 -- for i = 4, 100 do
 --     for j = 1, 1000 do

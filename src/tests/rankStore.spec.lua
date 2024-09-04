@@ -7,8 +7,8 @@ return function()
     beforeEach(function()
         expect.extend(Util.GetExpectationExtensions())
         local numBuckets = 4
-        local maxBucketsSize = 10
-        rankStore = RankStore.GetRankStore("UnitTestsRankStore_3", numBuckets, maxBucketsSize)
+        local maxBucketsSize = 100
+        rankStore = RankStore.GetRankStore("UnitTestsRankStore_5", numBuckets, maxBucketsSize, 5, false)
         rankStore:ClearAsync()
         return rankStore
     end)
