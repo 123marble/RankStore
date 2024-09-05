@@ -37,6 +37,9 @@ export type setResult = {
     newScore : number
 }
 
+export type compression = BucketsStore.compression
+export type dataStructure = BucketsStore.dataStructure
+
 --[=[
 Creates or retrieves a Rank Store with the provided name.
 @param name -- Name of the RankStore
@@ -46,6 +49,8 @@ Creates or retrieves a Rank Store with the provided name.
                         Default is 60 seconds. -1 disables lazy saving but be advised that
                         this significantly increases the number of DataStore writes.
 @param parallel -- Whether to save the data in parallel
+@param dataStructure -- The data structure to use. "table" or "string". Default is "table"
+@param compression -- The compression algorithm to use. "base91" or "none". Default is "base91"
 @return RankStore
 @yields
 ]=]
@@ -54,18 +59,22 @@ function RankStore.GetRankStore(
     numBuckets : number,
     maxBucketSize : number, 
     lazySaveTime : number?,
-    parallel : boolean?
+    parallel : boolean?,
+    dataStructure : dataStructure?,
+    compression : compression?
 )
     local self = setmetatable({}, RankStore)
 
     lazySaveTime = lazySaveTime == nil and 60 or lazySaveTime
     parallel = parallel == nil and true or parallel
+    dataStructure = dataStructure == nil and "table" or dataStructure
+    compression = compression == nil and "base91" or compression
 
     self._name = name
     self._datastore = Shared.GetDataStore(name)
 
     self._metadataStore = MetadataStore.GetMetadataStore(name, numBuckets, maxBucketSize)
-    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore, parallel, lazySaveTime)
+    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore, parallel, lazySaveTime, dataStructure, compression)
     self._identityStore = IdentityStore.GetIdentityStore(name, self._metadataStore)
     
     return self

@@ -1,11 +1,11 @@
 local Util = {}
 
 export type tableAccessor =  {
-    Get: (leaderboard: string, index: number) -> any,
-    Update: (leaderboard: string, oldIndex: number, newIndex: number, entry: any) -> string,
-    Insert: (leaderboard: string, index: number, entry: any) -> string,
-    Remove: (leaderboard: string, index: number) -> string,
-    Length: (leaderboard: string) -> number
+    Get: (leaderboard: any, index: number) -> any,
+    Update: (leaderboard: any, oldIndex: number, newIndex: number, entry: any) -> string,
+    Insert: (leaderboard: any, index: number, entry: any) -> string,
+    Remove: (leaderboard: any, index: number) -> string,
+    Length: (leaderboard: any) -> number
 }
 
 -- Generic merge for a collection of sorted tables
@@ -17,7 +17,7 @@ export type tableAccessor =  {
 -- @return: A new table with merged and sorted elements
 -- todo: Using the accessor here feels awkward. Merge should be a completely generic operation but it's signature
 -- is being dictated by the use of encoded leaderboards in leaderboardHelper.lua.
-function Util.Merge(tables : {{}}, accessor : tableAccessor, ascending : boolean, getKey : boolean, limit : number?) : {}
+function Util.Merge(tables : {{}}, accessor : tableAccessor, ascending : boolean, getKey : (any)->(any), limit : number?) : {}
     local result = {}
     local indices = {}
     local tablesToMerge = #tables
@@ -58,6 +58,22 @@ function Util.Merge(tables : {{}}, accessor : tableAccessor, ascending : boolean
     end
     
     return result
+end
+
+-- Method 3: Using a function to create an enum (more typesafe)
+function Util.CreateEnum(values)
+    local enum = {}
+    for i, value in ipairs(values) do
+        enum[value] = value
+    end
+    return setmetatable(enum, {
+        __index = function(_, key)
+            error(string.format("Invalid enum value: %s", tostring(key)), 2)
+        end,
+        __newindex = function()
+            error(string.format("Cannot modify enum"), 2)
+        end
+    })
 end
 
 return Util

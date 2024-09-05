@@ -33,7 +33,7 @@ return function()
         end
         expect.extend(extensions)
 
-        rankStore = RankStore.GetRankStore("UnitTestsBucketStore_3", numBuckets, maxBucketsSize, -1, false)
+        rankStore = RankStore.GetRankStore("UnitTestsBucketStore_3", numBuckets, maxBucketsSize, -1, false, "table", "base91")
         
         bucketsStore = rankStore._bucketsStore
         

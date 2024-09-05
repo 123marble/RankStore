@@ -43,7 +43,6 @@ function CachedDataStore:UpdateAsync(key : string, callback : (any) -> any, useC
         self:_CreateTimedCache(key)
     end
     if self._cache:IsExpired(key) or not useCache then
-        print("ACTUALLY UPDATING")
         local decompressed
         result = self._datastore:UpdateAsync(key, function(v)
             decompressed = callback(self._decompressor(v), false)
@@ -51,7 +50,6 @@ function CachedDataStore:UpdateAsync(key : string, callback : (any) -> any, useC
         end)
         result = decompressed
     else 
-        print("LOCALLY UPDATING")
         -- TODO: is there a synchronisation issue here if the cache expires after the check above?
         result = callback(self._cache:Get(key), true)
         cacheWasUsed = true

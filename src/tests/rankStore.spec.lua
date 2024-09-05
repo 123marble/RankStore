@@ -4,11 +4,13 @@ local Util = require(game.ServerScriptService.Tests.util)
 return function()
     local RankStore = require(game.ServerScriptService.RankStore)
     local rankStore
+    local name = "UnitTestsRankStore_5"
+    local numBuckets = 4
+    local maxBucketsSize = 100
     beforeEach(function()
         expect.extend(Util.GetExpectationExtensions())
-        local numBuckets = 4
-        local maxBucketsSize = 100
-        rankStore = RankStore.GetRankStore("UnitTestsRankStore_5", numBuckets, maxBucketsSize, 2, false)
+
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, 3, false, "table", "base91")
         rankStore:ClearAsync()
         return rankStore
     end)
@@ -96,11 +98,29 @@ return function()
         expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual(expectedLeaderboard)
     end)
 
-    it("TestSetScoreBucketsStoreErrorMultiple", function()
- 
+    itFIXME("TestSetScoreBucketsStoreErrorMultiple", function()
+        -- TODO: Simulate the identity store write succeeding but the buckets store write failing multiple times.
+        -- Check that RankStore can recover from this situation.
     end)
 
-    it("TestBucketSizeExceeded", function()
+    it("TestCompression", function()
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "table", "base91")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
 
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "table", "none")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
     end)
+
+    it("TestParallel", function()
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, true, "table", "base91")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+        
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "table", "base91")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+    end)
+
 end
