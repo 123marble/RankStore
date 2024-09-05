@@ -42,16 +42,30 @@ Creates or retrieves a Rank Store with the provided name.
 @param name -- Name of the RankStore
 @param numBuckets -- The number of buckets to use
 @param maxBucketSize -- Maximum number of entries in each bucket
+@param lazySaveTime -- Time in seconds to wait before saving the data to the DataStore. 
+                        Default is 60 seconds. -1 disables lazy saving but be advised that
+                        this significantly increases the number of DataStore writes.
+@param parallel -- Whether to save the data in parallel
 @return RankStore
 @yields
 ]=]
-function RankStore.GetRankStore(name : string, numBuckets : number, maxBucketSize : number)
+function RankStore.GetRankStore(
+    name : string,
+    numBuckets : number,
+    maxBucketSize : number, 
+    lazySaveTime : number?,
+    parallel : boolean?
+)
     local self = setmetatable({}, RankStore)
+
+    lazySaveTime = lazySaveTime == nil and 60 or lazySaveTime
+    parallel = parallel == nil and true or parallel
+
     self._name = name
     self._datastore = Shared.GetDataStore(name)
 
     self._metadataStore = MetadataStore.GetMetadataStore(name, numBuckets, maxBucketSize)
-    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore)
+    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore, parallel, lazySaveTime)
     self._identityStore = IdentityStore.GetIdentityStore(name, self._metadataStore)
     
     return self
@@ -83,7 +97,6 @@ function RankStore:GetEntryAsync(id : number) : entry
         warn("Attempted to get entry for non-existent id:", tostring(id))
         return nil
     end
-
     local rank = self._bucketsStore:FindRankAsync(id, identityEntry.currentScore)
     if not rank then  -- This is a consistency violation between the identity store and the leaderboard store
                         -- This should be corrected by inserting the score into the leaderboard in the bucket.
@@ -116,6 +129,25 @@ function RankStore:GetTopScoresAsync(n : number) : {entry}
 end
 
 --[=[
+Increase the number of buckets used. This method can be used once the existing buckets are full to allow
+for more entries to be added.
+:::info In order to minimise query time, the existing entires are distributed equally among the new buckets. This operation
+reads your entire RankStore and writes it into the new buckets. This is a costly operation if you RankStore is large.:::
+@param n -- The number of buckets to update to. This should be greater than the current number of buckets.
+@yields
+]=]
+function RankStore:UpdateNumBucketsAsync(n : number)
+    self._bucketsStore:UpdateNumBucketsAsync(n)
+end
+
+--[=[
+Manually flush the buffer to force a write to the DataStore. Use `lazySaveTime` to automatically flush the buffer at regular intervals.
+]=]
+function RankStore:FlushBuffer()
+    self._bucketsStore:FlushBuffer()
+end
+
+--[=[
 Clears all entries in the RankStore.
 
 This actually just increments the keys used in the underlying DataStore so no data is actually deleted. However there is 
@@ -126,10 +158,6 @@ function RankStore:ClearAsync()
     local prevMetadata = self._metadataStore:GetAsync()
     local newMetadata = {numBuckets = prevMetadata.numBuckets, line = prevMetadata.line, maxBucketSize = prevMetadata.maxBucketSize, version = prevMetadata.version+1}
     self._metadataStore:SetAsync(newMetadata)
-end
-
-function RankStore:UpdateNumBucketsAsync(n : number)
-    self._bucketsStore:UpdateNumBucketsAsync(n)
 end
 
 return RankStore

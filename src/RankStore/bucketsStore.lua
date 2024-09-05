@@ -5,9 +5,10 @@ local Shared = require(script.Parent.shared)
 local LeaderboardHelper = require(script.Parent.leaderboardHelper)
 local Util = require(script.Parent.util)
 local MetadataStore = require(script.Parent.metadataStore)
-
-local READ_THROUGHPUT_LIMIT_BYTES = 25*1024*1024
-local WRITE_THROUGHPUT_LIMIT_BYTES = 4*1024*1024
+local Buffer = require(script.Parent.buffer)
+local CachedDataStore = require(script.Parent.cachedDataStore)
+local Signal = require(game.ServerScriptService.Packages.goodsignal)
+local Compression = require(script.Parent.utf8Compress)
 
 export type entry = LeaderboardHelper.entry
 
@@ -21,16 +22,27 @@ type bucketsConfig = {
 local BucketsOperator = {}
 BucketsOperator.__index = BucketsOperator
 
-function BucketsOperator.New(name : string, config : bucketsConfig, parallel : boolean?)
+function BucketsOperator.New(datastore : CachedDataStore.typedef, config : bucketsConfig, parallel : boolean?, useCache : boolean?)
     local self = setmetatable({}, BucketsOperator)
 
     self._config = config
-    self._datastore = Shared.GetDataStore(name)
+    self._useCache = useCache == nil and true or useCache
+    self._cacheUsedForWrite = false
+    self._cacheUsedForRead = false
+    self._datastore = datastore
     self._parallel = parallel == nil and true or parallel
     self._leaderboardHelper = LeaderboardHelper.New()
-    self._leaderboardHelper:SetAccessor(LeaderboardHelper.compressedLeaderboardAccessor)
+    self._leaderboardHelper:SetAccessor(LeaderboardHelper.defaultLeaderboardAccessor)
 
     return self
+end
+
+function BucketsOperator:WasCacheUsedForWrite() : boolean
+    return self._cacheUsedForWrite
+end
+
+function BucketsOperator:WasCacheUsedForRead() : boolean
+    return self._cacheUsedForRead
 end
 
 function BucketsOperator:SetScoreBatchWithResultAsync(ids : {number}, prevScores : {number?}, newScores : number) : ({number}, {number})
@@ -50,10 +62,14 @@ end
 function BucketsOperator:SetScoreBatchAsync(ids : {number}, prevScores : {number?}, newScores : {number})
     local groupedIds = self:_GroupByBucketKey(ids, prevScores, newScores)
     local primaryBucketIds, primaryBucketPrevRanks, primaryBucketNewRanks, primaryBucketPrevScores, primaryBucketNewScores = {}, {}, {}, {}, {}
+    self._cacheUsedForWrite = false
+
     for bucketKey, v in pairs(groupedIds) do
+        
         local bucketIds, bucketPrevScores, bucketNewScores = table.unpack(v)
 
-        local bucketPrevRanks, bucketNewRanks = self:_UpdateBucketBatchAsync(bucketKey, bucketIds, bucketPrevScores, bucketNewScores)
+        local bucketPrevRanks, bucketNewRanks, _cacheUsedForWrite = self:_UpdateBucketBatchAsync(bucketKey, bucketIds, bucketPrevScores, bucketNewScores)
+        self._cacheUsedForWrite = self._cacheUsedForWrite or _cacheUsedForWrite
         
         for i = 1, #bucketNewRanks do
             local newIndex = #primaryBucketNewRanks+1
@@ -71,7 +87,7 @@ function BucketsOperator:_GetBucketsRaw() : {{entry}}
     local leaderboards = {}
 
     self:_MapGetBucketsAsync(function(_, _, leaderboard)
-        if #leaderboard > 0 then
+        if self._leaderboardHelper:Length(leaderboard) > 0 then
             table.insert(leaderboards, leaderboard)
         end
     end, nil, false) -- TODO: Doesn't work in parallel because it needs to actually yield to wait for the data to be fetched
@@ -90,20 +106,19 @@ end
 
 function BucketsOperator:GetTopScoresAsync(limit : number) : {entry}
     local leaderboards = self:_GetBucketsRaw()
-
     local topScores = Util.Merge(leaderboards, self._leaderboardHelper._accessor, false, function(entry) return entry.score end, limit)
     return topScores
 end
 
 function BucketsOperator:GetBucketRawAsync(bucketKey : number) : {entry}
-    local success, result = pcall(function()
-        return self._datastore:GetAsync(bucketKey)
+    local success, result, cacheUsedForRead = pcall(function()
+        return self._datastore:GetAsync(bucketKey, self._useCache)
     end)
 
     if not success then
         error("Failed to get bucket: " .. tostring(result))
     end
-
+    self._cacheUsedForRead = cacheUsedForRead
     if not result then
         return self._leaderboardHelper:GenerateEmpty()
     end
@@ -158,11 +173,10 @@ function BucketsOperator:_UpdateBucketBatchAsync(bucketKey : string, ids : {numb
     local maxBucketSize = self._config.maxBucketSize
     local updateFailureReason = ""
     local prevRanks, newRanks = {}, {}
-    local _, result = pcall(function()
-        return self._datastore:UpdateAsync(bucketKey, function(leaderboard : {LeaderboardHelper.entry})
+    local success, result, cacheWasUsed = pcall(function()
+        return self._datastore:UpdateAsync(bucketKey, function(leaderboard : {LeaderboardHelper.entry}, isLocal)
             leaderboard = leaderboard or self._leaderboardHelper:GenerateEmpty()
-
-            if #leaderboard + Shared.RECORD_BYTES*#ids > maxBucketSize then
+            if self._leaderboardHelper:Length(leaderboard) + #ids > math.floor(maxBucketSize/LeaderboardHelper.RECORD_SIZE) then
                 updateFailureReason = "Not enough space in bucket."
                 return nil
             end
@@ -177,16 +191,14 @@ function BucketsOperator:_UpdateBucketBatchAsync(bucketKey : string, ids : {numb
                 table.insert(newRanks, newRank)
                 prevRanks[#newRanks] = prevRank
             end
-
             return leaderboard
-        end)
+        end, self._useCache)
     end)
-
-    if not result then
+    if not success or not result then
         error("Failed to update bucket " .. bucketKey .. ": " .. updateFailureReason)
     end
 
-    return prevRanks, newRanks
+    return prevRanks, newRanks, cacheWasUsed
 end
 
 -- Intended to be used in combination with _MapGetBucketsAsync
@@ -259,6 +271,8 @@ end
 
 function BucketsOperator:_MapGetBucketsAsync(func : (bucketsStore : {}, bucketKey : string, leaderboard : {entry}, any...) -> any, ignoreKeys : {string}?, parallel : boolean?, ...)
     parallel = parallel or false
+    local numCompleted = 0
+    local completionSignal = Signal.new()
 
     local function runMap(bucketKey, ...)
         local leaderboard = self:GetBucketRawAsync(bucketKey)
@@ -271,9 +285,18 @@ function BucketsOperator:_MapGetBucketsAsync(func : (bucketsStore : {}, bucketKe
         if parallel then
             task.spawn(function(...)
                 runMap(bucketKey, ...)
+                numCompleted += 1
+                if numCompleted == #bucketKeys then
+                    completionSignal:Fire()
+                end
             end, ...)
         else
             runMap(bucketKey, ...)
+        end
+    end
+    if parallel then
+        if numCompleted < #bucketKeys then
+            completionSignal:Wait()
         end
     end
 end
@@ -310,13 +333,65 @@ function BucketsOperator:_GetAllBucketKeys(ignoreKeys : {string}?)
     return bucketKeys
 end
 
-function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataStore.typedef, parallel : boolean?)
+local function FlushBuffer(bucketsStore, buf : {{number}})
+    local ids, prevScores, newScores = {}, {}, {}
+    for _, write in ipairs(buf) do
+        local bufIds, bufPrevScores, bufNewScores = table.unpack(write)
+
+        for i, id in ipairs(bufIds) do
+            table.insert(ids, id)
+            prevScores[#ids] = bufPrevScores[i]
+            newScores[#ids] = bufNewScores[i]
+        end
+    end
+    local bucketsOperator = BucketsOperator.New(bucketsStore._datastore, bucketsStore:_ConstructConfigFromMetadata(), true, false)
+    bucketsOperator:SetScoreBatchAsync(ids, prevScores, newScores)
+end
+
+function BucketsStore.GetBucketsStore(name : string, metadataStore : MetadataStore.typedef, parallel : boolean?, lazySaveTime : number?)
     local self = setmetatable({}, BucketsStore)
 
     self._name = name
     self._metadataStore = metadataStore
     self._parallel = parallel == nil and true or parallel
+
+    self._lazySaveTime = lazySaveTime == nil and 60 or lazySaveTime
+    if self._lazySaveTime == -1 then
+        self._useCache = false
+        self._lazySaveTime = nil
+    else
+        self._useCache = true
+    end
+
+    local compressor = function(v : {entry}) : string
+        if not v then
+            return
+        end
+        local t =  {}
+        for i = 1,#v do
+            t[i] = LeaderboardHelper._CompressRecord(v[i].id, v[i].score)
+            
+        end
+        return table.concat(t, "")
+    end
+
+    local decompressor = function(v : string) : {entry}
+        if not v then
+            return
+        end
+        local t = {}
+        for i = 1, #v, LeaderboardHelper.RECORD_SIZE do
+            local id, score = LeaderboardHelper._DecompressRecord(string.sub(v, i, i+LeaderboardHelper.RECORD_SIZE-1))
+            table.insert(t, {id = id, score = score})
+        end
+        return t
+    end
     
+    self._datastore = CachedDataStore.New(Shared.GetDataStore(name), self._flushTime, compressor, decompressor)
+    self._buf = Buffer.New(function(buf)
+        FlushBuffer(self, buf)
+    end, self._lazySaveTime)
+
     return self
 end
 
@@ -331,18 +406,30 @@ function BucketsStore:_ConstructConfigFromMetadata() : bucketsConfig
 end
 
 function BucketsStore:_ConstructOperator()
-    return BucketsOperator.New(self._name, self:_ConstructConfigFromMetadata())
+    return BucketsOperator.New(self._datastore, self:_ConstructConfigFromMetadata(), self._parallel, self._useCache)
 end
 
-function BucketsStore:SetScoreBatchAsync(ids : {number}, prevScores : {number?}, newScores : {number})
+function  BucketsStore:_CheckWriteBuffer(ids, prevScores, newScores, operator)
+    if operator:WasCacheUsedForWrite() then
+        self._buf:Write(ids, prevScores, newScores)
+    end
+end
+
+function BucketsStore:FlushBuffer()
+    self._buf:Flush()
+end
+
+function BucketsStore:SetScoreBatchAsync(ids : {number}, prevScores : {number?}, newScores : {number}) : ({number}, {number})
     local operator = self:_ConstructOperator()
     local prevRank, newRank = operator:SetScoreBatchWithResultAsync(ids, prevScores, newScores)
+    self:_CheckWriteBuffer(ids, prevScores, newScores, operator)
     return prevRank, newRank
 end
 
 function BucketsStore:SetScoreBatchNoResultAsync(ids : {number}, prevScores : {number?}, newScores : {number})
     local operator = self:_ConstructOperator()
     operator:SetScoreBatchAsync(ids, prevScores, newScores)
+    self:_CheckWriteBuffer(ids, prevScores, newScores, operator)
 end
 
 function BucketsStore:SetScoreAsync(id : number, prevScore : number?, newScore : number) : (number, number)
@@ -372,7 +459,7 @@ end
 
 function BucketsStore:_CopyAllData(sourceConfig : bucketsConfig, targetConfig : bucketsConfig)
     for i = 1, sourceConfig.numBuckets do
-        local operator = BucketsOperator.New(self._name, sourceConfig)
+        local operator = BucketsOperator.New(self._datastore, sourceConfig)
         
         local leaderboard = operator:GetBucketAsync(operator:GetBucketKey(i))
 
@@ -383,15 +470,8 @@ function BucketsStore:_CopyAllData(sourceConfig : bucketsConfig, targetConfig : 
             table.insert(scores, entry.score)
         end
 
-        local operator = BucketsOperator.New(self._name, targetConfig)
+        local operator = BucketsOperator.New(self._datastore, targetConfig)
         operator:SetScoreBatchAsync(ids, {}, scores)
-
-        local extraBytes = 1000 -- Add some extra bytes to be safe
-        local readDelay = 60/(READ_THROUGHPUT_LIMIT_BYTES/(#leaderboard+extraBytes)) -- We are copying a lot of data so we need to throttle the loop
-                                                                        -- to not hit the throughput limits
-        local writeDelay = 60/(WRITE_THROUGHPUT_LIMIT_BYTES/(#leaderboard+extraBytes))
-        local delay = math.max(readDelay, writeDelay)
-        task.wait(delay)
     end
 end
 

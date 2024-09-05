@@ -1,7 +1,7 @@
 local RankStore = require(game.ServerScriptService.RankStore)
 local DataStoreService = game:GetService("DataStoreService")
 
-local rankStore = RankStore.GetRankStore("TestLeaderboard_1", 4)
+local rankStore = RankStore.GetRankStore("TestLeaderboard_20", 4, 1000, 3, true)
 
 function printDatastoreBudget()
     local updateBudget = DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.UpdateAsync)
@@ -10,22 +10,54 @@ function printDatastoreBudget()
     print("UpdateAsync:", tostring(updateBudget), "GetAsync:", tostring(getBudget))
 end
 
+-- rankStore:ClearAsync()
+-- --rankStore._metadataStore:SetAsync({line = 21, numBuckets = 4})
+-- print(rankStore:GetTopScoresAsync(10))
+
+-- print(rankStore:SetScoreAsync(1, 25))
+-- print(rankStore:SetScoreAsync(2, 50))
+-- print(rankStore:SetScoreAsync(3, 20))
+-- print(rankStore:SetScoreAsync(4, 75))
+-- print(rankStore:SetScoreAsync(5, 45))
+-- print(rankStore:SetScoreAsync(1, 65))
+
+-- print(rankStore:GetTopScoresAsync(10))
+
+-- print(rankStore:GetEntryAsync(3))
+
+
+
+local count = 1
+function writeBatch(rankStore, numRecords)
+
+    local ids = {}
+    local prevScores = {}
+    local newScores = {}
+
+    for i = 1, numRecords do
+        table.insert(ids, count)
+        table.insert(prevScores, nil)
+        table.insert(newScores, math.random(1,10000000))
+        count += 1
+    end
+    local start = os.clock()
+    rankStore._bucketsStore:SetScoreBatchNoResultAsync(ids, prevScores, newScores)
+    print("Time taken to set scores for", #ids, "ids:", os.clock() - start)
+end
+
+local numBuckets = 10
+local maxBucketsSize = 4000000
+local rankStore = RankStore.GetRankStore("TestLeaderboard_10", numBuckets, maxBucketsSize, 3, false)
 rankStore:ClearAsync()
---rankStore._metadataStore:SetAsync({line = 21, numBuckets = 4})
-print(rankStore:GetTopScoresAsync(10))
 
-print(rankStore:SetScoreAsync(1, 25))
-print(rankStore:SetScoreAsync(2, 50))
-print(rankStore:SetScoreAsync(3, 20))
-print(rankStore:SetScoreAsync(4, 75))
-print(rankStore:SetScoreAsync(5, 45))
-print(rankStore:SetScoreAsync(1, 65))
+local maxRecordsPerBuckets = math.floor(maxBucketsSize/9)
+print(maxRecordsPerBuckets)
 
-print(rankStore:GetTopScoresAsync(10))
-
-print(rankStore:GetEntryAsync(3))
-    
-
+writeBatch(rankStore, maxRecordsPerBuckets*5)
+wait(1)
+writeBatch(rankStore, maxRecordsPerBuckets*4)
+wait(1)
+writeBatch(rankStore, maxRecordsPerBuckets)
 
 -- for i = 4, 100 do
 --     for j = 1, 1000 do
