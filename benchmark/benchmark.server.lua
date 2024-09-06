@@ -46,29 +46,35 @@ end
 
 local numBuckets = 10
 local maxBucketsSize = 4000000
-local rankStore = RankStore.GetRankStore("TestLeaderboard_10", numBuckets, maxBucketsSize, 3, false)
-rankStore:ClearAsync()
+local rankStore = RankStore.GetRankStore("TestLeaderboard_10", numBuckets, maxBucketsSize, 3, true, "string", "base91")
+--rankStore:ClearAsync()
 
 local maxRecordsPerBuckets = math.floor(maxBucketsSize/9)
 print(maxRecordsPerBuckets)
 
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
-wait(1)
-writeBatch(rankStore, maxRecordsPerBuckets)
+print(rankStore:GetTopScoresAsync(10))
+print("DSFDSF")
+print(rankStore:GetTopScoresAsync(10))
+
+--print(rankStore:GetEntryAsync(1035630))
+
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
+-- wait(1)
+-- writeBatch(rankStore, maxRecordsPerBuckets)
 
 
 -- for i = 4, 100 do

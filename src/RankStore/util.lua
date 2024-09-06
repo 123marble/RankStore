@@ -1,6 +1,7 @@
 local Util = {}
 
 export type tableAccessor =  {
+    New : () -> any,
     Get: (leaderboard: any, index: number) -> any,
     Update: (leaderboard: any, oldIndex: number, newIndex: number, entry: any) -> string,
     Insert: (leaderboard: any, index: number, entry: any) -> string,
@@ -17,8 +18,8 @@ export type tableAccessor =  {
 -- @return: A new table with merged and sorted elements
 -- todo: Using the accessor here feels awkward. Merge should be a completely generic operation but it's signature
 -- is being dictated by the use of encoded leaderboards in leaderboardHelper.lua.
-function Util.Merge(tables : {{}}, accessor : tableAccessor, ascending : boolean, getKey : (any)->(any), limit : number?) : {}
-    local result = {}
+function Util.Merge(tables : {any}, accessor : tableAccessor, ascending : boolean, getKey : (any)->(any), limit : number?) : {}
+    local result = accessor.New()
     local indices = {}
     local tablesToMerge = #tables
     local limitReached = false
@@ -49,7 +50,7 @@ function Util.Merge(tables : {{}}, accessor : tableAccessor, ascending : boolean
             break
         end
         
-        table.insert(result, accessor.Get(tables[bestIndex], indices[bestIndex]))
+        result = accessor.Insert(result, accessor.Length(result)+1, accessor.Get(tables[bestIndex], indices[bestIndex]))
         indices[bestIndex] = indices[bestIndex] + 1
         
         if limit and #result >= limit then

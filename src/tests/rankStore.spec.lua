@@ -123,4 +123,16 @@ return function()
         expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
     end)
 
+    it("TestDataStructure", function()
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "string", "base91")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+        expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual({{id = 1, rank = 1, score = 200}})
+        
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "table", "base91")
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+        expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual({{id = 1, rank = 1, score = 200}})
+    end)
+
 end

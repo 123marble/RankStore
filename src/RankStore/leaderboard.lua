@@ -141,7 +141,7 @@ function Leaderboard.NewFromMerge(leaderboards : {typedef}, dataStructure : data
 
     self:_ConfigureDataStructure(dataStructure)
     
-    local data = {}
+    local data = {self._data}
     for _, leaderboard in ipairs(leaderboards) do
         table.insert(data, leaderboard._data)
     end
@@ -299,12 +299,12 @@ function LeaderboardCompressor.New(dataStructure : dataStructure, compression : 
             self._compress = base91Compressor
             self._decompress = base91Decompressor
         elseif dataStructure == "string" then -- string is always stored in base 91 so no need to compress.
-            self._compress = function(leaderboard) return leaderboard._data end
-            self._decompress = function(leaderboard) return leaderboard._data end
+            self._compress = function(data) return data end
+            self._decompress = function(s) return s end
         end
     elseif compression == "none" then
-        self._compress = function(leaderboard) return leaderboard._data end
-        self._decompress = function(leaderboard) return leaderboard._data end
+        self._compress = function(data) return data end
+        self._decompress = function(s) return s end
     else
         error("Invalid compression type", compression)
     end
@@ -318,6 +318,7 @@ function LeaderboardCompressor:Compress(leaderboard : typedef) : string
     if not leaderboard then
         return
     end
+    
     return self._compress(leaderboard:GetRaw())
 end
 

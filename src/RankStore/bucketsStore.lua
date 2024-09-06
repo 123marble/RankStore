@@ -96,7 +96,7 @@ function BucketsOperator:GetBucketsRaw() : {Leaderboard.typedef}
         if leaderboard:Length() > 0 then
             table.insert(leaderboards, leaderboard)
         end
-    end, nil, false) -- TODO: Doesn't work in parallel because it needs to actually yield to wait for the data to be fetched
+    end, nil, self._parallel)
 
     return leaderboards
 end
