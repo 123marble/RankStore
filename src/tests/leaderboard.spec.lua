@@ -12,11 +12,16 @@ return function()
         print("test completed...")
     end)
     
-    local config = {{name = "table", leaderboard = Leaderboard.New(nil, "table")}, {name = "string", leaderboard = Leaderboard.New(nil, "string")}}
+    local config = {
+        {name = "table", leaderboard = Leaderboard.New(nil, "table")},
+        {name = "string", leaderboard = Leaderboard.New(nil, "string")},
+        {name = "avl", leaderboard = Leaderboard.New(nil, "avl")}
+    }
 
     for _, config in ipairs(config) do
-        leaderboard = config.leaderboard
+        
         describe("Test Leaderboard " .. tostring(config.name) .. " data structure", function()
+            leaderboard = config.leaderboard
             it("TestLeaderboardHelperNew", function()
                 expect(leaderboard).to.be.a("table")
             end)
@@ -117,6 +122,42 @@ return function()
                 expect(function()
                     _, _= leaderboard:Update(1, 200, 50)
                 end).to.throw()
+            end)
+
+            it("TestGetInsertPos", function()
+                leaderboard:GenerateEmpty()
+                _, _= leaderboard:Update(1, nil, 100)
+                _, _= leaderboard:Update(2, nil, 200)
+                _, _= leaderboard:Update(3, nil, 300)
+                expect(leaderboard:GetInsertPos(50)).to.be.equal(4)
+                expect(leaderboard:GetInsertPos(150)).to.be.equal(3)
+                expect(leaderboard:GetInsertPos(250)).to.be.equal(2)
+                expect(leaderboard:GetInsertPos(350)).to.be.equal(1)
+            end)
+
+            it("TestGetRank", function()
+                leaderboard:GenerateEmpty()
+                _, _= leaderboard:Update(1, nil, 100)
+                _, _= leaderboard:Update(2, nil, 200)
+                _, _= leaderboard:Update(3, nil, 300)
+                expect(leaderboard:GetRank(1, 100)).to.be.equal(1)
+                expect(leaderboard:GetRank(2, 200)).to.be.equal(2)
+                expect(leaderboard:GetRank(3, 300)).to.be.equal(3)
+            end)
+
+            it("TestGetMergedLeaderboards", function()
+                local leaderboards = {
+                    Leaderboard.New(nil, "avl"),
+                    Leaderboard.New(nil, "avl"),
+                    Leaderboard.New(nil, "avl"),
+                }
+                leaderboards[1]:Update(1, nil, 100)
+                leaderboards[1]:Update(2, nil, 200)
+                leaderboards[2]:Update(3, nil, 50)
+                leaderboards[3]:Update(4, nil, 400)
+
+                local entries = Leaderboard.GetMergedLeaderboards(leaderboards, 3)
+                expect(entries).to.be.deepEqual({{id = 4, score = 400}, {id = 2, score = 200}, {id = 1, score = 100}})
             end)
 
             it("TestCompressRecord", function()

@@ -101,11 +101,6 @@ function BucketsOperator:GetBucketsRaw() : {Leaderboard.typedef}
     return leaderboards
 end
 
-function BucketsOperator:GetTopScoresAsync(limit : number?) : Leaderboard.typedef
-    local leaderboards = self:GetBucketsRaw()
-    return Leaderboard.NewFromMerge(leaderboards, self._dataStructure, limit)
-end
-
 function BucketsOperator:GetBucketRawAsync(bucketKey : number) : Leaderboard.typedef
     local success, result, cacheUsedForRead = pcall(function()
         return self._datastore:GetAsync(bucketKey, self._useCache)
@@ -440,7 +435,8 @@ end
 
 function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     local operator = self:_ConstructOperator()
-    return operator:GetTopScoresAsync(limit):GetAll()
+    local leaderboards = operator:GetBucketsRaw()
+    return Leaderboard.GetMergedLeaderboards(leaderboards, limit)
 end
 
 function BucketsStore:GetBucketsAsync() : {{entry}}

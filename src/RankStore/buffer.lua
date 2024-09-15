@@ -24,8 +24,6 @@ function Buffer:Write(...)
     if self._autoflush then
         self:Flush()
     end
-    print("WRITTEN TO BUFFER")
-    print(self._timerCoroutine)
     if not self._timerCoroutine then
         self:_StartFlushTimer()
     end
