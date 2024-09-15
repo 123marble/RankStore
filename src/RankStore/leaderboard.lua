@@ -6,6 +6,7 @@ Leaderboard.__index = Leaderboard
 
 local Utf8Compress = require(script.Parent.utf8Compress)
 local Util = require(script.Parent.util)
+local AVL = require(script.Parent.avl)
 
 export type entry = {
     id: string,
@@ -120,7 +121,28 @@ Leaderboard.defaultLeaderboardAccessor = {
     end
 }
 
-export type dataStructure = "table" | "string"
+Leaderboard.avlTreeLeaderboardAccessor = {
+    New = function()
+        return AVL.New()
+    end,
+    Get = function(avl : AVL.typedef, index : number)
+        return avl:Get(index)
+    end,
+    Update = function(avl : AVL.typedef, oldIndex : number, newIndex : number, entry : entry)
+        avl:Remove
+    end,
+    Insert = function(leaderboard, index, entry)
+        -- Insert the new entry
+    end,
+    Remove = function(leaderboard, index)
+        -- Remove the entry at the given index
+    end,
+    Length = function(leaderboard)
+        return leaderboard.size
+    end
+}
+
+export type dataStructure = "table" | "string" | "avl"
 
 -- Creates a new leaderboard. The data must be compatible with the accessor.
 -- I.e. if using a compressed accessor, the data must be a string. Or, if using a default accessor, the data must be a table.
@@ -155,6 +177,8 @@ function Leaderboard:_ConfigureDataStructure(dataStructure : dataStructure)
         self._accessor = Leaderboard.defaultLeaderboardAccessor
     elseif dataStructure == "string" then
         self._accessor = Leaderboard.compressedLeaderboardAccessor
+    elseif dataStructure == "avl" then
+        self._accessor = Leaderboard.avlTreeLeaderboardAccessor
     else
         error("Invalid data structure")
     end
