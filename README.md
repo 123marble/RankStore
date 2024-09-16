@@ -51,7 +51,7 @@ Full API is available on [123marble.github.io/RankStore/api/RankStore](https://1
 
 **NB: This table applies to only the optimal 'avl' tree `dataStructure`.**
 
-**NB: A DataStore GetAsync or UpdateAsync request retrieves the entire leaderboard over the network so the actual time complexity for any leaderboard operations is O(n). For this reason, it is important that the `lazySaveTime` parameter is set appropriately to only periodically save the leaderboard to the DataStore. This allows more operations to be performed in-memory meaning they are bounded by only the algorithm time complexity, which is very fast. Understand that Lazy Saving means that the leaderboard on a given server will be out of sync with the leaderboard on other servers, but will at least be correct for any changes made within the server.**
+**NB: A DataStore GetAsync or UpdateAsync request retrieves the entire leaderboard over the network so the actual time complexity for any leaderboard operations is O(n). For this reason, it is important that the `lazySaveTime` parameter is set appropriately to only periodically save the leaderboard to the DataStore. This allows more operations to be performed in-memory which means they are bounded by only the algorithm time complexity. Understand that Lazy Saving means that the leaderboard on a given server will be out of sync with the leaderboard on other servers temporarily, but will at least be correct for any changes made within the server.**
 
 **NB: The N GetAsync requests are made in parallel if the `parallel` parameter is set to true.**
 
@@ -59,13 +59,13 @@ Full API is available on [123marble.github.io/RankStore/api/RankStore](https://1
 ## DataStore Limits
 
 ### Data Limits
-Each entry requires only 9 characters for storage. The current storage limit for DataStore is 4,194,304 characters per key which means that approximately a maximum of 450k entries are storable in 1 key. The `maxBucketsSize` parameter allows you to set the maximum number of characters per key.
+Each entry requires only 9 characters for storage. The current storage limit for DataStore is 4,194,304 characters per key which equates to approximately a maximum 450k entries that are storable in 1 key. The `maxBucketsSize` parameter will set the maximum number of characters per key.
 
-The `numBuckets` parameter allows you to set the number of keys that the leaderboard is shared over. This means that the maximum number of entries storable in your RankStore is `(numBuckets*maxBucketsSize) / 9`.
+The `numBuckets` parameter allows you to set the number of keys that the leaderboard is shared over. Therefore, the maximum number of entries storable in your RankStore is `(numBuckets*maxBucketsSize) / 9`.
 
 
 ### Request and Throughput Limits
-Setting the `lazySaveTime` parameter appropriately is crucuial for avoiding the request and throughput limits of the DataStore.
+Setting the `lazySaveTime` parameter appropriately is crucuial for avoiding the request and throughput limits of DataStores.
 
 
 
