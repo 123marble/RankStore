@@ -381,19 +381,18 @@ function Leaderboard:Iterator() : () -> entry?
     return self._implementation:Iterator()
 end
 
-local base91Compressor = function(data : any) : string
-    if not data then
+local base91Compressor = function(leaderboard : typedef) : string
+    if not leaderboard then
         return
     end
     local t =  {}
-    for i = 1,#data do
-        t[i] = Leaderboard._CompressRecord(data[i].id, data[i].score)
-        
+    for entry in leaderboard:Iterator() do
+        table.insert(t, Leaderboard._CompressRecord(entry.id, entry.score))
     end
     return table.concat(t, "")
 end
 
-local base91Decompressor = function(v : string) : typedef
+local tableBase91Decompressor = function(v : string) : typedef
     if not v then
         return
     end
@@ -402,18 +401,11 @@ local base91Decompressor = function(v : string) : typedef
         local id, score = Leaderboard._DecompressRecord(string.sub(v, i, i+Leaderboard.RECORD_SIZE-1))
         table.insert(t, {id = id, score = score})
     end
-    return t
+    return Leaderboard.New(t, "table")
 end
 
-local avlBase91Compressor = function(data : AVL.typedef) : string
-    if not data then
-        return
-    end
-    local t = {}
-    for node in data:Iterator() do
-        table.insert(t, Leaderboard._CompressRecord(node.Value, node.Extra))
-    end
-    return table.concat(t, "")
+local stringBase91Decompressor = function(v : string) : typedef
+    return Leaderboard.New(v, "string")
 end
 
 local avlBase91Decompressor = function(v : string) : AVL.typedef
@@ -423,11 +415,10 @@ local avlBase91Decompressor = function(v : string) : AVL.typedef
     local t = {}
     for i = 1, #v, Leaderboard.RECORD_SIZE do
         local id, score = Leaderboard._DecompressRecord(string.sub(v, i, i+Leaderboard.RECORD_SIZE-1))
-        table.insert(t, {id, score})
+        table.insert(t, {score, id})
     end
-
-    local avl = AVL.FromOrderedArray(t)
-    return avl
+    local avl = AVL.FromOrderedArray(t, true)
+    return Leaderboard.New(avl, "avl")
 end
 
 export type compression = "base91" | "none"
@@ -444,17 +435,17 @@ function LeaderboardCompressor.New(dataStructure : dataStructure, compression : 
     if compression == "base91" then
         if dataStructure == "table" then
             self._compress = base91Compressor
-            self._decompress = base91Decompressor
-        elseif dataStructure == "string" then -- string is always stored in base 91 so no need to compress.
-            self._compress = function(data) return data end
-            self._decompress = function(s) return s end
+            self._decompress = tableBase91Decompressor
+        elseif dataStructure == "string" then 
+            self._compress = function(leaderboard) return leaderboard:GetRaw() end -- string is always stored in base 91 so no need to compress.
+            self._decompress = stringBase91Decompressor
         elseif dataStructure == "avl" then
-            self._compress = avlBase91Compressor
+            self._compress = base91Compressor
             self._decompress = avlBase91Decompressor
         end
     elseif compression == "none" then
-        self._compress = function(data) return data end
-        self._decompress = function(s) return s end
+        self._compress = function(leaderboard) return leaderboard:GetRaw() end
+        self._decompress = function(s) return Leaderboard.New(s, self._dataStructure) end
     else
         error("Invalid compression type", compression)
     end
@@ -469,15 +460,14 @@ function LeaderboardCompressor:Compress(leaderboard : typedef) : string
         return
     end
     
-    return self._compress(leaderboard:GetRaw())
+    return self._compress(leaderboard)
 end
 
 function LeaderboardCompressor:Decompress(s : string) : typedef
     if not s then
         return Leaderboard.New(nil, self._dataStructure)
     end
-    local data = self._decompress(s)
-    return Leaderboard.New(data, self._dataStructure)
+    return self._decompress(s)
 end
 
 function Leaderboard.GetMergedLeaderboards(leaderboards, limit) : {entry} 

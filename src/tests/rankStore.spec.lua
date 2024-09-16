@@ -10,7 +10,7 @@ return function()
     beforeEach(function()
         expect.extend(Util.GetExpectationExtensions())
 
-        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, 3, false, "table", "base91")
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "avl", "base91")
         rankStore:ClearAsync()
         return rankStore
     end)

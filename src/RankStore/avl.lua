@@ -30,18 +30,30 @@ end
     @param OrderedArray    An array of {Value, Extra} pairs (or just Values) sorted in ascending order
     @return An AVL tree object
 ]]
-function Tree.FromOrderedArray(OrderedArray)
+function Tree.FromOrderedArray(OrderedArray, IsDescending)
+	IsDescending = (IsDescending == nil) and false or IsDescending
+	local IsAscending = not IsDescending
     local self = {}
     setmetatable(self, { __index = ClassVariables })
 
+    -- Function to get the actual index based on isAscending
+    local function getActualIndex(idx)
+        if IsAscending then
+            return idx
+        else
+            return #OrderedArray - idx + 1
+        end
+    end
+
     -- Internal recursive function to build the tree
-    local function BuildTree(array, startIdx, endIdx)
+    local function BuildTree(startIdx, endIdx)
         if startIdx > endIdx then
             return nil
         end
 
         local midIdx = math.floor((startIdx + endIdx) / 2)
-        local NodeData = array[midIdx]
+        local actualIdx = getActualIndex(midIdx)
+        local NodeData = OrderedArray[actualIdx]
         local Value, Extra
 
         if type(NodeData) == "table" then
@@ -52,8 +64,8 @@ function Tree.FromOrderedArray(OrderedArray)
         end
 
         local root = Node(Value, Extra)
-        root.Left = BuildTree(array, startIdx, midIdx - 1)
-        root.Right = BuildTree(array, midIdx + 1, endIdx)
+        root.Left = BuildTree(startIdx, midIdx - 1)
+        root.Right = BuildTree(midIdx + 1, endIdx)
 
         -- Update height
         root.Height = 1 + math.max(
@@ -67,7 +79,7 @@ function Tree.FromOrderedArray(OrderedArray)
         return root
     end
 
-    self.Root = BuildTree(OrderedArray, 1, #OrderedArray)
+    self.Root = BuildTree(1, #OrderedArray)
     return self
 end
 

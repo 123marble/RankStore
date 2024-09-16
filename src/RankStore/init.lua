@@ -49,15 +49,18 @@ Creates or retrieves a Rank Store with the provided name.
                         Default is 60 seconds. -1 disables lazy saving but be advised that
                         this significantly increases the number of DataStore writes.
 @param parallel -- Whether to save the data in parallel
-@param dataStructure -- The data structure to use. "table" or "string". Default is "table"
-@param compression -- The compression algorithm to use. "base91" or "none". Default is "base91"
+@param dataStructure -- The data structure to use. "table", "string" or "avl". Default is "table".
+For use cases requiring a mixture of read/write operations, `avl` is best because insertion into an AVL tree is O(log N). For read only use cases, `string` is best because only the
+entries that are read are decompressed. In comparison to the other data structures, these will decompress the entire
+leaderboard when fetching from the DataStore. Conversely, string is terrible for leaderboard insertions because each insertion copies the entire leaderboard in memory, which is O(N).
+@param compression -- The compression algorithm to use. "base91" or "none". Default is "base91".
 @return RankStore
 @yields
 ]=]
 function RankStore.GetRankStore(
     name : string,
-    numBuckets : number,
-    maxBucketSize : number, 
+    numBuckets : number?,
+    maxBucketSize : number?, 
     lazySaveTime : number?,
     parallel : boolean?,
     dataStructure : dataStructure?,
@@ -65,9 +68,11 @@ function RankStore.GetRankStore(
 )
     local self = setmetatable({}, RankStore)
 
+    numBuckets = numBuckets == nil and 5 or numBuckets
+    maxBucketSize = maxBucketSize == nil and 1000000 or maxBucketSize
     lazySaveTime = lazySaveTime == nil and 60 or lazySaveTime
     parallel = parallel == nil and true or parallel
-    dataStructure = dataStructure == nil and "table" or dataStructure
+    dataStructure = dataStructure == nil and "avl" or dataStructure
     compression = compression == nil and "base91" or compression
 
     self._name = name
