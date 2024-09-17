@@ -13,11 +13,6 @@ local Shared = require(script.Parent.RankStore.shared)
 local RankStore = {}
 RankStore.__index = RankStore
 
--- Compression functions
--- local function encodeEntry(userId, score)
---     return string.pack(">I3I3", userId, score)
--- end
-
 --- @type entry {id: string, rank: number, score: number}
 --- @within RankStore
 --- An array of strings, a number, or nil.
