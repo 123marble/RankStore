@@ -15,13 +15,13 @@ return function()
     local config = {
         {name = "table", leaderboard = Leaderboard.New(nil, "table")},
         {name = "string", leaderboard = Leaderboard.New(nil, "string")},
-        {name = "avl", leaderboard = Leaderboard.New(nil, "avl")}
+        {name = "avl", leaderboard = Leaderboard.New(nil, "avl", false)}
     }
 
-    for _, config in ipairs(config) do
+    for _, conf in ipairs(config) do
         
-        describe("Test Leaderboard " .. tostring(config.name) .. " data structure", function()
-            leaderboard = config.leaderboard
+        describe("Test Leaderboard " .. tostring(conf.name) .. " data structure", function()
+            leaderboard = conf.leaderboard
             it("TestLeaderboardHelperNew", function()
                 expect(leaderboard).to.be.a("table")
             end)
@@ -140,16 +140,16 @@ return function()
                 _, _= leaderboard:Update(1, nil, 100)
                 _, _= leaderboard:Update(2, nil, 200)
                 _, _= leaderboard:Update(3, nil, 300)
-                expect(leaderboard:GetRank(1, 100)).to.be.equal(1)
+                expect(leaderboard:GetRank(1, 100)).to.be.equal(3)
                 expect(leaderboard:GetRank(2, 200)).to.be.equal(2)
-                expect(leaderboard:GetRank(3, 300)).to.be.equal(3)
+                expect(leaderboard:GetRank(3, 300)).to.be.equal(1)
             end)
 
             it("TestGetMergedLeaderboards", function()
                 local leaderboards = {
-                    Leaderboard.New(nil, "avl"),
-                    Leaderboard.New(nil, "avl"),
-                    Leaderboard.New(nil, "avl"),
+                    Leaderboard.New(nil, conf.name),
+                    Leaderboard.New(nil, conf.name),
+                    Leaderboard.New(nil, conf.name),
                 }
                 leaderboards[1]:Update(1, nil, 100)
                 leaderboards[1]:Update(2, nil, 200)
@@ -171,6 +171,43 @@ return function()
 
                 local actualId, actualScore = Leaderboard._DecompressRecord(actual)
                 expect({actualId, actualScore}).to.be.deepEqual({expectedId, expectedScore})
+            end)
+
+            it("TestAscending", function()
+                local leaderboard = Leaderboard.New(nil, conf.name, true)
+                leaderboard:GenerateEmpty()
+                _, _= leaderboard:Update(1, nil, 100)
+                _, _= leaderboard:Update(2, nil, 200)
+                _, _= leaderboard:Update(3, nil, 300)
+                expect(leaderboard:GetAll()).to.be.deepEqual({{id = 1, score = 100}, {id = 2, score = 200}, {id = 3, score = 300}})
+                expect(leaderboard:GetRank(1, 100)).to.be.equal(1)
+                expect(leaderboard:GetIndex(1)).to.be.deepEqual({id = 1, score = 100})
+            end)
+
+            it("TestDescending", function()
+                local leaderboard = Leaderboard.New(nil, conf.name, false)
+                leaderboard:GenerateEmpty()
+                _, _= leaderboard:Update(1, nil, 100)
+                _, _= leaderboard:Update(2, nil, 200)
+                _, _= leaderboard:Update(3, nil, 300)
+                expect(leaderboard:GetAll()).to.be.deepEqual({{id = 3, score = 300}, {id = 2, score = 200}, {id = 1, score = 100}})
+                expect(leaderboard:GetRank(1, 100)).to.be.equal(3)
+                expect(leaderboard:GetIndex(1)).to.be.deepEqual({id = 3, score = 300})
+            end)
+        end)
+
+        describe("Test Leaderboard " .. tostring(conf.name) .. " compression", function()
+            it("TestCompression", function()
+                local leaderboardCompressor = Leaderboard.LeaderboardCompressor.New(conf.name, "base91")
+                local leaderboard = conf.leaderboard
+                leaderboard:GenerateEmpty()
+                _, _= leaderboard:Update(1, nil, 100)
+                _, _= leaderboard:Update(2, nil, 200)
+                _, _= leaderboard:Update(3, nil, 300)
+                local compressed = leaderboardCompressor:Compress(leaderboard)
+                local decompressed = leaderboardCompressor:Decompress(compressed)
+                leaderboard:SetAscending(false)
+                expect(decompressed:GetAll()).to.be.deepEqual({{id = 3, score = 300}, {id = 2, score = 200}, {id = 1, score = 100}})
             end)
         end)
     end

@@ -10,7 +10,7 @@ return function()
     beforeEach(function()
         expect.extend(Util.GetExpectationExtensions())
 
-        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "avl", "base91")
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "avl", "base91", false)
         rankStore:ClearAsync()
         return rankStore
     end)
@@ -138,6 +138,22 @@ return function()
         rankStore:ClearAsync()
         expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
         expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual({{id = 1, rank = 1, score = 200}})
+    end)
+
+    it("TestAscendingDescending", function()
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "avl", "base91", true)
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+        expect(rankStore:SetScoreAsync(2, 300)).to.be.deepEqual({newRank = 2, newScore = 300})
+        expect(rankStore:SetScoreAsync(1, 400)).to.be.deepEqual({prevRank = 1, prevScore = 200, newRank = 2, newScore = 400})
+        expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual({{id = 2, rank = 1, score = 300}, {id = 1, rank = 2, score = 400}})
+        
+        rankStore = RankStore.GetRankStore(name, numBuckets, maxBucketsSize, -1, false, "avl", "base91", false)
+        rankStore:ClearAsync()
+        expect(rankStore:SetScoreAsync(1, 200)).to.be.deepEqual({newRank = 1, newScore = 200})
+        expect(rankStore:SetScoreAsync(2, 300)).to.be.deepEqual({newRank = 1, newScore = 300})
+        expect(rankStore:SetScoreAsync(1, 400)).to.be.deepEqual({prevRank = 2, prevScore = 200, newRank = 1, newScore = 400})
+        expect(rankStore:GetTopScoresAsync(10)).to.be.deepEqual({{id = 1, rank = 1, score = 400}, {id = 2, rank = 2, score = 300}})
     end)
 
 end

@@ -30,13 +30,12 @@ end
     @param OrderedArray    An array of {Value, Extra} pairs (or just Values) sorted in ascending order
     @return An AVL tree object
 ]]
-function Tree.FromOrderedArray(OrderedArray, IsDescending)
-	IsDescending = (IsDescending == nil) and false or IsDescending
-	local IsAscending = not IsDescending
+function Tree.FromOrderedArray(OrderedArray, IsAscending)
+    IsAscending = IsAscending or true
     local self = {}
     setmetatable(self, { __index = ClassVariables })
 
-    -- Function to get the actual index based on isAscending
+    -- Function to get the actual index based on order
     local function getActualIndex(idx)
         if IsAscending then
             return idx

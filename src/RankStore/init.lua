@@ -54,6 +54,7 @@ For use cases requiring a mixture of read/write operations, `avl` is best becaus
 entries that are read are decompressed. In comparison to the other data structures, these will decompress the entire
 leaderboard when fetching from the DataStore. Conversely, string is terrible for leaderboard insertions because each insertion copies the entire leaderboard in memory, which is O(N).
 @param compression -- The compression algorithm to use. "base91" or "none". Default is "base91".
+@param ascending -- Whether the leaderboard should be sorted in ascending order. Default is false (descending order).
 @return RankStore
 @yields
 ]=]
@@ -64,7 +65,8 @@ function RankStore.GetRankStore(
     lazySaveTime : number?,
     parallel : boolean?,
     dataStructure : dataStructure?,
-    compression : compression?
+    compression : compression?,
+    ascending : boolean?
 )
     local self = setmetatable({}, RankStore)
 
@@ -74,12 +76,13 @@ function RankStore.GetRankStore(
     parallel = parallel == nil and true or parallel
     dataStructure = dataStructure == nil and "avl" or dataStructure
     compression = compression == nil and "base91" or compression
+    ascending = ascending == nil and false or ascending
 
     self._name = name
     self._datastore = Shared.GetDataStore(name)
 
     self._metadataStore = MetadataStore.GetMetadataStore(name, numBuckets, maxBucketSize)
-    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore, parallel, lazySaveTime, dataStructure, compression)
+    self._bucketsStore = BucketsStore.GetBucketsStore(name, self._metadataStore, parallel, lazySaveTime, dataStructure, compression, ascending)
     self._identityStore = IdentityStore.GetIdentityStore(name, self._metadataStore)
     
     return self

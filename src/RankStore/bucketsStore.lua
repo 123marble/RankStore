@@ -28,7 +28,8 @@ function BucketsOperator.New(
     config : bucketsConfig,
     parallel : boolean?,
     useCache : boolean?,
-    dataStructure : dataStructure
+    dataStructure : dataStructure,
+    ascending : boolean?
 )
     local self = setmetatable({}, BucketsOperator)
 
@@ -39,6 +40,7 @@ function BucketsOperator.New(
     self._datastore = datastore
     self._parallel = parallel == nil and true or parallel
     self._dataStructure = dataStructure
+    self._ascending = ascending or false
 
     return self
 end
@@ -341,7 +343,8 @@ function BucketsStore.GetBucketsStore(
     parallel : boolean,
     lazySaveTime : number,
     dataStructure : dataStructure,
-    compression : compression
+    compression : compression,
+    ascending : boolean
 )
     local self = setmetatable({}, BucketsStore)
 
@@ -357,10 +360,11 @@ function BucketsStore.GetBucketsStore(
     end
     self._dataStructure = dataStructure
     self._compression = compression
+    self._ascending = ascending or false
 
 
     local compressor = function(leaderboard : Leaderboard.typedef) : string
-        local c = Leaderboard.LeaderboardCompressor.New(self._dataStructure, self._compression)
+        local c = Leaderboard.LeaderboardCompressor.New(self._dataStructure, self._compression, self._ascending)
         return c:Compress(leaderboard)
     end
 
@@ -369,8 +373,10 @@ function BucketsStore.GetBucketsStore(
                                                                     -- It feels like compression could belong in the user defined UpdateAsync callback 
                                                                     -- but this would require the user to perform the smart decompression themselves.
 
-        local c = Leaderboard.LeaderboardCompressor.New(self._dataStructure, self._compression)
-        return c:Decompress(s)
+        local c = Leaderboard.LeaderboardCompressor.New(self._dataStructure, self._compression, self._ascending)
+        local leaderboard = c:Decompress(s)
+        leaderboard:SetAscending(self._ascending)
+        return leaderboard
     end
     
     self._datastore = CachedDataStore.New(Shared.GetDataStore(name), self._flushTime, compressor, decompressor)
@@ -392,7 +398,7 @@ function BucketsStore:_ConstructConfigFromMetadata() : bucketsConfig
 end
 
 function BucketsStore:_ConstructOperator()
-    return BucketsOperator.New(self._datastore, self:_ConstructConfigFromMetadata(), self._parallel, self._useCache, self._dataStructure, self._compression)
+    return BucketsOperator.New(self._datastore, self:_ConstructConfigFromMetadata(), self._parallel, self._useCache, self._dataStructure, self._ascending)
 end
 
 function  BucketsStore:_CheckWriteBuffer(ids, prevScores, newScores, operator)
@@ -436,7 +442,7 @@ end
 function BucketsStore:GetTopScoresAsync(limit : number) : {entry}
     local operator = self:_ConstructOperator()
     local leaderboards = operator:GetBucketsRaw()
-    return Leaderboard.GetMergedLeaderboards(leaderboards, limit)
+    return Leaderboard.GetMergedLeaderboards(leaderboards, limit, self._ascending)
 end
 
 function BucketsStore:GetBucketsAsync() : {{entry}}

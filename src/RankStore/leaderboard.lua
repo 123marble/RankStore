@@ -118,7 +118,7 @@ export type dataStructure = "table" | "string" | "avl"
 local SequentialLeaderboard = {}
 SequentialLeaderboard.__index = SequentialLeaderboard
 
-function SequentialLeaderboard.New(data : string | {}, dataStructure : "table" | "string")
+function SequentialLeaderboard.New(data : string | {}, dataStructure : "table" | "string", ascending : boolean?)
     local self = setmetatable({}, SequentialLeaderboard)
     
     if dataStructure == "table" then
@@ -128,6 +128,8 @@ function SequentialLeaderboard.New(data : string | {}, dataStructure : "table" |
     else
         error("Invalid data structure for SequentialLeaderboard")
     end
+    
+    self._ascending = ascending or false
     
     if data then
         self._data = data
@@ -146,13 +148,19 @@ function SequentialLeaderboard:Length(): number
     return self._accessor.Length(self._data)
 end
 
-function SequentialLeaderboard:Iterator()
+function SequentialLeaderboard:Iterator(ascending : boolean?)
+    ascending = (ascending == nil) and self._ascending or ascending
     local index = 0
-    
+    local length = self:Length()
+
     return function()
         index = index + 1
-        return self:GetIndex(index)
-        
+        local actualIndex = ascending and (length - index + 1) or index
+        if actualIndex >= 1 and actualIndex <= length then
+            return self:GetIndex(index)
+        else
+            return nil
+        end
     end
 end
  
@@ -176,13 +184,15 @@ function SequentialLeaderboard:BinarySearch(score)
 end
 
 function SequentialLeaderboard:GetIndex(index : number): entry
-    return self._accessor.Get(self._data, index)
+    local length = self:Length()
+    local actualIndex = self._ascending and (length - index + 1) or index
+    return self._accessor.Get(self._data, actualIndex)
 end
 
 function SequentialLeaderboard:GetAll(): {entry}
     local result = {}
-    for i = 1, self._accessor.Length(self._data) do
-        table.insert(result, self._accessor.Get(self._data, i))
+    for entry in self:Iterator() do
+        table.insert(result, entry)
     end
     return result
 end
@@ -198,7 +208,11 @@ function SequentialLeaderboard:GetRank(id: string, score: number): number
     local upperValue = self._accessor.Get(self._data, upper)
     while upper >= 1 and upperValue and upperValue.score == score do
         if upperValue.id == id then
-            return upper
+            local rank = upper
+            if self._ascending then
+                rank = self:Length() - upper + 1
+            end
+            return rank
         end
         upper = upper - 1
     end
@@ -207,7 +221,11 @@ function SequentialLeaderboard:GetRank(id: string, score: number): number
     local lowerValue = self._accessor.Get(self._data, lower)
     while lower <= self._accessor.Length(self._data) and lowerValue and lowerValue.score == score do
         if lowerValue.id == id then
-            return lower
+            local rank = lower
+            if self._ascending then
+                rank = self:Length() - lower + 1
+            end
+            return rank
         end
         lower = lower + 1
     end
@@ -247,11 +265,11 @@ end
 local TreeLeaderboard = {}
 TreeLeaderboard.__index = TreeLeaderboard
 
-function TreeLeaderboard.New(data : AVL.typedef?)
+function TreeLeaderboard.New(data : AVL.typedef?, ascending : boolean)
     local self = setmetatable({}, TreeLeaderboard)
     
     self._avl = data or AVL.New()
-    self._descending = true
+    self._ascending = ascending or false
 
     return self
 end
@@ -260,8 +278,9 @@ function TreeLeaderboard:GetRaw()
     return self._avl
 end
 
-function TreeLeaderboard:Iterator() : () -> entry?
-    local iter = self._avl:Iterator(self._descending)
+function TreeLeaderboard:Iterator(ascending : boolean?) : () -> entry?
+    ascending = (ascending == nil) and self._ascending or ascending
+    local iter = self._avl:Iterator(not ascending)
     return function()
         local node = iter()
         if node then
@@ -279,26 +298,31 @@ function TreeLeaderboard:GenerateEmpty()
 end
 
 function TreeLeaderboard:GetIndex(index : number): entry
-    local node = self._avl:GetIndex(index, self._descending)
+    local size = self._avl:GetSize()
+    local actualIndex = not self._ascending and (size - index + 1) or index
+    local node = self._avl:GetIndex(actualIndex)
     return {id = node.Extra, score = node.Value}
 end
 
 function TreeLeaderboard:GetAll(): {entry}
     local result = {}
-    for node in self._avl:Iterator(self._descending) do
-        table.insert(result, {id = node.Extra, score = node.Value})
+    for entry in self:Iterator() do
+        table.insert(result, entry)
     end
     return result
 end
 
 function TreeLeaderboard:GetRank(id: string, score: number): number
     local _, rank = self._avl:Get(score, id)
+    if not self._ascending then
+        rank = self._avl:GetSize() - rank + 1
+    end
     return rank
 end
 
 function TreeLeaderboard:GetInsertPos(score: number): number
     local pos = self._avl:GetInsertRank(score)
-    if self._descending then
+    if not self._ascending then
         pos = self._avl:GetSize() - pos + 2
     end
     return pos
@@ -320,25 +344,29 @@ function TreeLeaderboard:Update(id: string, prevScore: number?, newScore: number
     local _, avlNewRank = self._avl:Insert(newScore, id)
 
     local prevRank, newRank = avlPrevRank, avlNewRank
-    if self._descending then
+    if not self._ascending then
         prevRank = prevRank and self._avl:GetSize() - prevRank + 1 or nil
         newRank = self._avl:GetSize() - newRank + 1
     end
     return prevRank, newRank
 end
 
-function Leaderboard.New(data : any?, dataStructure : dataStructure)
+function Leaderboard.New(data : any?, dataStructure : dataStructure, ascending : boolean?)
     local self = setmetatable({}, Leaderboard)
-    
+    ascending = ascending or false
     if dataStructure == "table" or dataStructure == "string" then
-        self._implementation = SequentialLeaderboard.New(data, dataStructure)
+        self._implementation = SequentialLeaderboard.New(data, dataStructure, ascending)
     elseif dataStructure == "avl" then
-        self._implementation = TreeLeaderboard.New(data)
+        self._implementation = TreeLeaderboard.New(data, ascending)
     else
         error("Invalid data structure")
     end
     
     return self
+end
+
+function Leaderboard:SetAscending(ascending : boolean)
+    self._implementation._ascending = ascending
 end
 
 function Leaderboard:GetRaw()
@@ -377,8 +405,8 @@ function Leaderboard:Update(id: string, prevScore: number?, newScore: number): (
     return self._implementation:Update(id, prevScore, newScore)
 end
 
-function Leaderboard:Iterator() : () -> entry?
-    return self._implementation:Iterator()
+function Leaderboard:Iterator(ascending : boolean?) : () -> entry?
+    return self._implementation:Iterator(ascending)
 end
 
 local base91Compressor = function(leaderboard : typedef) : string
@@ -386,7 +414,8 @@ local base91Compressor = function(leaderboard : typedef) : string
         return
     end
     local t =  {}
-    for entry in leaderboard:Iterator() do
+    for entry in leaderboard:Iterator(true) do -- Remember the approach taken is to iterate retrieval methods in reverse for descending leaderboards
+                                                -- as opposed to changing the actual storage order, so we must always store in ascending order.
         table.insert(t, Leaderboard._CompressRecord(entry.id, entry.score))
     end
     return table.concat(t, "")
@@ -470,7 +499,7 @@ function LeaderboardCompressor:Decompress(s : string) : typedef
     return self._decompress(s)
 end
 
-function Leaderboard.GetMergedLeaderboards(leaderboards, limit) : {entry} 
+function Leaderboard.GetMergedLeaderboards(leaderboards, limit, ascending) : {entry} 
     -- TODO: The code structure could be improved by moving this method to leaderboard class.
     -- E.g. a Leaderboard.NewFromMerge(leaderboards, limit) : typedef method. The current issue is that
     -- there must be a method to efficiently instantiate the leaderboard from an ordered list of entries.
@@ -482,7 +511,7 @@ function Leaderboard.GetMergedLeaderboards(leaderboards, limit) : {entry}
     local activeIterators = 0
 
     for i = 1, numLeaderboards do
-        local iterator = leaderboards[i]:Iterator()
+        local iterator = leaderboards[i]:Iterator(ascending)
         iterators[i] = iterator
         local entry = iterator()
         if entry then
@@ -497,35 +526,35 @@ function Leaderboard.GetMergedLeaderboards(leaderboards, limit) : {entry}
     limit = limit or math.huge  -- Use unlimited limit if not specified
 
     while activeIterators > 0 and count < limit do
-        local maxScore = nil
-        local maxIndex = nil
+        local bestScore = nil
+        local bestIndex = nil
         for i = 1, numLeaderboards do
             local entry = currentEntries[i]
             if entry then
-                if not maxScore or entry.score > maxScore then
-                    maxScore = entry.score
-                    maxIndex = i
-                elseif entry.score == maxScore then
+                if not bestScore or (ascending and entry.score < bestScore) or (not ascending and entry.score > bestScore) then
+                    bestScore = entry.score
+                    bestIndex = i
+                elseif entry.score == bestScore then
                     -- Tie-breaker based on id if scores are equal
-                    if entry.id < currentEntries[maxIndex].id then
-                        maxIndex = i
+                    if (ascending and entry.id < currentEntries[bestIndex].id) or (not ascending and entry.id > currentEntries[bestIndex].id) then
+                        bestIndex = i
                     end
                 end
             end
         end
 
-        if not maxIndex then
+        if not bestIndex then
             break
         end
 
-        table.insert(result, currentEntries[maxIndex])
+        table.insert(result, currentEntries[bestIndex])
         count = count + 1
 
-        local nextEntry = iterators[maxIndex]()
+        local nextEntry = iterators[bestIndex]()
         if nextEntry then
-            currentEntries[maxIndex] = nextEntry
+            currentEntries[bestIndex] = nextEntry
         else
-            currentEntries[maxIndex] = nil
+            currentEntries[bestIndex] = nil
             activeIterators = activeIterators - 1
         end
     end
