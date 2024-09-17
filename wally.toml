@@ -1,9 +1,13 @@
 [package]
-name = "123marble/rankstore"
-version = "0.1.0"
+name = "123marble-rbx/rankstore"
+version = "1.0.0"
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
+license = "MIT OR Apache-2.0"
+exclude = ["benchmark", "build", "testRunner.server.lua"]
 
 [dependencies]
-testez = "roblox/testez@0.4.1"
 goodsignal = "stravant/goodsignal@0.2.1"
+
+[dev-dependencies]
+testez = "roblox/testez@0.4.1"

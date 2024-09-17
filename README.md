@@ -14,7 +14,7 @@ This module aims to overcome the current limitation of ROBLOX's Ordered Datastor
 - The entry ID and score must be 5 byte and 4 byte **integers** respectively. These strict integer sizes allow the leaderboard to be compressed to a higher base.
 
 # Usage
-Add `` to your wally.toml or grab the model here.
+Add `rankstore = "123marble-rbx/rankstore@1.0.0"` to your wally.toml.
 
 ```lua
 local RankStore = require(game.ServerScriptService.RankStore)
@@ -44,14 +44,13 @@ Full API is available on [123marble.github.io/RankStore/api/RankStore](https://1
 | SetScoreAsync         | O(log n)                  | O(n)                    | 2 UpdateAsync<br /> N-1 GetAsync |
 | GetEntryAsync         | O(log n)                  | O(n)                    | N GetAsync               |
 | GetTopScoresAsync (k) | O(k)                      | O(n)                    | N GetAsync               |
-| RemoveEntryAsync            |                     |                 |            |
 | ClearAsync            | O(1)                      | O(1)                    | 1 SetAsync               |
 
 **N=num buckets, n=total entries**
 
 **NB: This table applies to only the optimal 'avl' tree `dataStructure`.**
 
-**NB: A DataStore GetAsync or UpdateAsync request retrieves the entire leaderboard over the network so the actual time complexity for any leaderboard operations is O(n). For this reason, it is important that the `lazySaveTime` parameter is set appropriately to only periodically save the leaderboard to the DataStore. This allows more operations to be performed in-memory which means they are bounded by only the algorithm time complexity. Understand that Lazy Saving means that the leaderboard on a given server will be out of sync with the leaderboard on other servers temporarily, but will at least be correct for any changes made within the server.**
+**NB: A DataStore GetAsync or UpdateAsync request retrieves the entire leaderboard data over the network. It is therefore crucial to performance to set the `lazySaveTime` parameter appropriately to periodically save changes to the DataStore. Lazy Saving will cause a server to  be out of sync with the true leaderboard stored in DataStore temporarily, but will at least be correct for any changes made within the server.**
 
 **NB: The N GetAsync requests are made in parallel if the `parallel` parameter is set to true.**
 
