@@ -110,16 +110,7 @@ With five buckets of 1,000,000 characters and nine characters per base-91-compre
 | Cross-server rankings are too stale | Decrease `lazySaveTime`; use `-1` only when every update must be written immediately. | More frequent writes reduce the available update throughput and can reach DataStore limits. |
 | Buckets are approaching their storage limit | Use `"base91"` compression and increase `numBuckets`. | More buckets increase the number of requests needed by rank queries. |
 
-The settings control the following behaviour:
-
-| Option | Trade-off |
-|--------|-----------|
-| `lazySaveTime` | Controls how long score updates are buffered. A higher value batches more updates into fewer writes, increasing throughput at the cost of slower cross-server consistency. Setting it to `-1` disables buffering and substantially increases DataStore writes. |
-| `numBuckets` | Controls how many DataStore keys contain the leaderboard. More buckets increase total capacity and reduce the amount of data in each bucket, but queries may require more DataStore requests. |
-| `maxBucketSize` | Limits the number of characters stored in each bucket. Increase it to fit more entries per bucket or decrease it to reduce the data transferred by each request. |
-| `parallel` | Runs independent bucket requests concurrently to reduce elapsed query time. This does not reduce the number of requests or total data transferred. |
-| `dataStructure` | Selects the in-memory representation. Use `"avl"` for mixed read-and-write workloads and `"string"` for read-heavy workloads. |
-| `compression` | Controls the serialized storage format. Use `"base91"` to reduce storage and network transfer, or `"none"` to retain the uncompressed representation. |
+For more information about these settings, see the `GetRankStore` API documentation https://123marble.github.io/RankStore/api/RankStore/
 
 # Limitations
 
